@@ -49,28 +49,15 @@ function render(){
  const moduleQuery=byId('moduleSearch').value.trim().toUpperCase();
  const moduleOnly=byId('companyModulesOnly');
  moduleOnly.disabled=!company;
- const companyModules=new Set();
- if(company&&moduleOnly.checked){
-  for(const floor of data.floors){
-   const blockedRooms=new Set(floor.blocked);
-   for(let room=1;room<=floor.rooms;room++){
-    if(!blockedRooms.has(room)&&roomBeds(floor,room).some(bed=>bed.company===company)){
-     companyModules.add(floor.module);
-     break;
-    }
-   }
-  }
- }
  map.replaceChildren();
  for(const floor of data.floors){
-  if(company&&moduleOnly.checked&&!companyModules.has(floor.module))continue;
   if(type&&floor.type!==type)continue;
   if(!floor.module.toUpperCase().startsWith(moduleQuery))continue;
   const blockedRooms=new Set(floor.blocked);
   const rooms=Array.from({length:floor.rooms},(_,index)=>index+1)
    .filter(room=>!blockedRooms.has(room))
    .map(room=>({room,beds:roomBeds(floor,room)}));
-  if(company&&!rooms.some(({beds})=>beds.some(bed=>bed.company===company||availableForCompany(bed))))continue;
+  if(company&&!rooms.some(({beds})=>beds.some(bed=>bed.company===company||(!moduleOnly.checked&&availableForCompany(bed)))))continue;
   const section=el('article','','floor'),plan=el('div','','plan');
   for(const {room,beds} of rooms){
    const otherCompany=company&&!beds.some(bed=>bed.company===company||availableForCompany(bed));
@@ -82,6 +69,9 @@ function render(){
     el('small',names.length>1?'Empresas mixtas':names[0]||'Sin empresa',
      !names.length||(company&&names.includes(company))?'company':''),
     el('small',count+' de '+beds.length+' camas ocupadas'));
+   if(company&&names.length>1&&names.includes(company)){
+    tile.append(el('small',company,'company'));
+   }
    const unassigned=beds.filter(availableForCompany).length;
    if(unassigned&&names.length)tile.append(el('small',
     unassigned+(unassigned===1?' cama libre sin empresa':' camas libres sin empresa'),'company'));
