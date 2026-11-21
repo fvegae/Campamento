@@ -16,7 +16,7 @@ small{display:block;margin-top:5px}#status{font-size:14px;color:#97392d}button:f
 <main>
  <header><h1>Campamento VPPP</h1></header>
  <section>
-  <form id="login" method="post">
+  <form id="loginForm" method="post">
    <h2>Iniciar sesión</h2>
    <label>Correo<input name="email" type="email" autocomplete="username" required></label>
    <label>Contraseña<input name="password" type="password" autocomplete="current-password" required></label>
@@ -33,11 +33,18 @@ small{display:block;margin-top:5px}#status{font-size:14px;color:#97392d}button:f
   <p id="status" role="status"></p>
  </section>
 </main>
-<script src="Campamento_VPPP_Conexion.js"></script>
+<script src="./Campamento_VPPP_Conexion.js"></script>
 <script>
-const form=document.getElementById('login');
+const form=document.getElementById('loginForm');
 const menu=document.getElementById('menu');
 const statusText=document.getElementById('status');
+
+if(typeof login!=='function'){
+ form.addEventListener('submit',event=>event.preventDefault());
+ form.querySelector('button').disabled=true;
+ statusText.textContent='No se pudo cargar Campamento_VPPP_Conexion.js. Verifica que esté publicado junto a esta página.';
+}else{
+
 
 function showMenu(session){
  document.getElementById('account').textContent=session.user.email;
@@ -72,5 +79,6 @@ document.getElementById('logout').onclick=endSession;
  try{await rpc('configuracion');showMenu(currentSession());}
  catch(error){statusText.textContent=error.message;}
 })();
+}
 </script>
 </html>
