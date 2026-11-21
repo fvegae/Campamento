@@ -7,10 +7,12 @@
 .remove-guest svg{width:18px;height:18px}
 .remove-guest:hover{background:#fff1f0}
 .remove-guest:disabled{opacity:.55;cursor:wait}
+.filters .module-only{display:flex;align-items:center;align-self:end;min-height:40px}
+.filters .module-only input{min-height:0;accent-color:#174e85}
 </style>
 <header><strong>Campamento VPPP</strong><a href="Campamento_VPPP_Login.html" style="color:white">Volver al menú</a></header><main>
 <h1>Consulta y asignación de camas</h1><p>Selecciona una habitación en el plano para consultar sus camas.</p>
-<div class="filters"><label>Empresa<select id="company"><option value="">Todas las empresas</option></select></label><label>Tipo de piso<select id="type"><option value="">Todos los tipos</option><option>WORKER</option><option>STAFF</option><option>MIXTO</option></select></label><label>Buscar módulo<input id="moduleSearch" type="search" placeholder="Ej. SD"></label></div>
+<div class="filters"><label>Empresa<select id="company"><option value="">Todas las empresas</option></select></label><label>Tipo de piso<select id="type"><option value="">Todos los tipos</option><option>WORKER</option><option>STAFF</option><option>MIXTO</option></select></label><label>Buscar módulo<input id="moduleSearch" type="search" placeholder="Ej. SD"></label><label class="module-only"><input id="companyModulesOnly" type="checkbox" disabled>Solo módulos de la empresa seleccionada</label></div>
 <div class="legend"><span class="free">Libre</span><span class="partial">Ocupación parcial</span><span class="full">Completa</span><span class="other-company">No corresponde a la empresa filtrada</span></div>
 <section id="map" aria-label="Plano de habitaciones"></section><p id="msg" role="status"></p></main>
 <dialog id="detail"><button class="action close" id="close">Cerrar</button><h2 id="roomTitle"></h2><p id="roomCompany" class="company"></p><section id="beds"></section><form id="entry" hidden></form><p id="feedback" role="status"></p></dialog>
@@ -45,8 +47,23 @@ const availableForCompany=bed=>!bed.company&&!bed.occupant;
 function render(){
  const map=byId('map'),company=byId('company').value,type=byId('type').value;
  const moduleQuery=byId('moduleSearch').value.trim().toUpperCase();
+ const moduleOnly=byId('companyModulesOnly');
+ moduleOnly.disabled=!company;
+ const companyModules=new Set();
+ if(company&&moduleOnly.checked){
+  for(const floor of data.floors){
+   const blockedRooms=new Set(floor.blocked);
+   for(let room=1;room<=floor.rooms;room++){
+    if(!blockedRooms.has(room)&&roomBeds(floor,room).some(bed=>bed.company===company)){
+     companyModules.add(floor.module);
+     break;
+    }
+   }
+  }
+ }
  map.replaceChildren();
  for(const floor of data.floors){
+  if(company&&moduleOnly.checked&&!companyModules.has(floor.module))continue;
   if(type&&floor.type!==type)continue;
   if(!floor.module.toUpperCase().startsWith(moduleQuery))continue;
   const blockedRooms=new Set(floor.blocked);
@@ -72,7 +89,12 @@ function render(){
    plan.append(tile);
   }
   if(!plan.childElementCount)continue;
-  section.append(el('h2','Módulo '+floor.module),el('p','Piso '+floor.number+' · '+floor.type),plan);
+  const freeBeds=rooms.flatMap(({beds})=>beds).filter(bed=>
+   !bed.occupant&&(!company||!bed.company||bed.company===company)
+  ).length;
+  const floorInfo=el('p','Piso '+floor.number+' · '+floor.type+' · ');
+  floorInfo.append(el('strong',freeBeds+(freeBeds===1?' cama libre':' camas libres')));
+  section.append(el('h2','Módulo '+floor.module),floorInfo,plan);
   map.append(section);
  }
  byId('msg').textContent=map.childElementCount?map.childElementCount+' pisos en la vista':'No hay pisos que coincidan con los filtros.';
@@ -182,6 +204,7 @@ async function load(){
   render();
   byId('company').onchange=render;
   byId('type').onchange=render;
+  byId('companyModulesOnly').onchange=render;
   byId('moduleSearch').addEventListener('input',render);
  }catch(error){byId('msg').textContent=error.message;}
 }
