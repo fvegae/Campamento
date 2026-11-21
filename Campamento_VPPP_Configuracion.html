@@ -1,0 +1,253 @@
+<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Configuración · Campamento VPPP</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font:16px system-ui;color:#142c45;background:#eef3f8}header{background:#102641;color:white;padding:18px max(24px,calc((100% - 1190px)/2));display:flex;justify-content:space-between;gap:12px}main{max-width:1240px;margin:auto;padding:28px 24px}h1,h2,p{margin:0 0 12px}h1{font-size:36px;letter-spacing:-1px}h2{font-size:21px}.layout{display:grid;grid-template-columns:230px minmax(0,1fr);gap:18px}.panel{background:white;border:1px solid #d6e1ec;border-radius:14px;padding:20px;margin-bottom:16px}.muted,small{color:#526983}.fields,.bar{display:flex;gap:12px;flex-wrap:wrap;align-items:end}.bar{justify-content:space-between}label{display:grid;gap:6px;font-size:14px;font-weight:650}button,input,select{font:inherit;border:1px solid #a8bbcf;border-radius:8px;padding:9px 11px;background:white;color:inherit}button{cursor:pointer}.primary{background:#174e85;color:white;border-color:#174e85}button:disabled{opacity:.55;cursor:default}.floor{display:block;width:100%;text-align:left;margin:6px 0}.floor[aria-current=true]{background:#dceafd;border-color:#5583b9;font-weight:700}.module{margin:16px 0 5px}.fields input{width:130px}.total{padding:9px 12px;background:#e4f2fa;border-radius:8px;font-weight:750}.checks{display:flex;flex-wrap:wrap;gap:14px;margin:10px 0 0}.checks label{display:flex;align-items:center}.checks input{width:auto}.plan{display:grid;grid-auto-flow:column;grid-template-rows:repeat(2,auto);grid-auto-columns:132px;gap:8px;overflow:auto;background:#eaf0f6;border-radius:10px;padding:12px;margin:12px 0}.room{text-align:left;min-height:68px}.room strong{display:block;overflow-wrap:anywhere}.room[aria-pressed=true]{background:#d9eafe;border-color:#285d9d;box-shadow:inset 0 0 0 1px #285d9d}.room.blocked{border-color:#87582a;background:#fff3df}.room.blocked[aria-pressed=true]{box-shadow:inset 0 0 0 2px #87582a}#status{min-height:24px;margin-top:10px}.error{color:#9a2b23}dialog{border:0;border-radius:14px;padding:24px;width:min(430px,92vw)}dialog::backdrop{background:#10264166}dialog label{margin:12px 0}button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #437eca;outline-offset:2px}@media(max-width:710px){.layout{grid-template-columns:1fr}}
+#workspace{border:0;margin:0;padding:0;min-width:0}[hidden]{display:none!important}
+</style>
+<header><strong>Campamento VPPP</strong><div id="navigation" hidden><button id="back">Volver al menú</button> <button id="logout">Cerrar sesión</button></div></header><main><h1>Configuración</h1>
+<p id="loading" role="status">Cargando configuración…</p>
+<fieldset id="workspace" hidden><div class="layout"><aside class="panel"><h2>Módulos y pisos</h2><div class="fields"><button id="newModule">Agregar módulo</button><button id="new">Agregar piso</button></div><nav id="nav" aria-label="Módulos y pisos"></nav></aside>
+<section><div class="panel"><div class="bar"><h2 id="title"></h2><button id="save" class="primary">Guardar configuración</button></div>
+<div class="fields"><label>Tipo de piso<select id="type"><option>WORKER</option><option>STAFF</option><option>MIXTO</option></select></label><label>Habitaciones<input id="rooms" type="number" min="1" max="200"></label><label>Camas por habitación<input id="beds" type="number" min="1" max="20"></label><output id="total" class="total"></output></div>
+<p style="margin:18px 0 0"><strong>Empresas permitidas en el piso</strong> <button id="newCompany" type="button">Agregar empresa</button></p><div id="checks" class="checks"></div><p id="status" role="status"></p></div>
+<div class="panel"><h2>Distribución de habitaciones</h2><p class="muted">Selecciona una o varias habitaciones. Los impares están arriba y los pares abajo.</p>
+<div id="plan" class="plan" aria-label="Plano de habitaciones"></div><div class="bar"><strong id="selected"></strong><div class="fields"><button id="lock">Bloquear selección</button><button id="unlock">Desbloquear selección</button></div><div class="fields"><label>Empresa de las habitaciones<select id="company"></select></label><button class="primary" id="assign">Aplicar al plano</button> <label>Cama<select id="bedChoice"></select></label></div></div></div></section></div></fieldset></main>
+<dialog id="dialog"><form id="create"><h2>Agregar piso</h2><label>Módulo<select id="module" required></select></label><label>Número de piso<input id="number" type="number" min="1" max="99" required></label><p id="createError" class="error" role="status"></p><div class="fields"><button type="button" id="cancel">Cancelar</button><button class="primary">Agregar</button></div></form></dialog>
+<dialog id="moduleDialog"><form id="createModule"><h2>Agregar módulo</h2><label>Código del módulo<input id="moduleCode" required maxlength="8" pattern="[A-Za-z][A-Za-z0-9]*" placeholder="Ej. SC"></label><p id="moduleError" class="error" role="status"></p><div class="fields"><button type="button" id="cancelModule">Cancelar</button><button class="primary">Agregar</button></div></form></dialog>
+<dialog id="companyDialog">
+<form id="createCompany">
+<h2>Agregar empresa</h2>
+<label>Razón social<input id="companyName" required maxlength="200"></label>
+<p id="companyError" class="error" role="status"></p>
+<div class="fields"><button type="button" id="cancelCompany">Cancelar</button>
+<button class="primary" type="submit">Agregar</button></div>
+</form>
+</dialog>
+<script src="Campamento_VPPP_Conexion.js"></script>
+<script>
+const get=id=>document.getElementById(id);
+let catalog=[], floors=[], extraModules=[];
+const modules=()=>extraModules;
+get('logout').onclick=()=>{
+ if(!get('workspace').disabled && mayLeave())endSession();
+};
+get('back').onclick=()=>{
+ if(!get('workspace').disabled && mayLeave())location.href=loginPage;
+};
+(async()=>{
+ if(!currentSession()){endSession();return;}
+ watchSession();
+ try{
+  const data=await rpc('configuracion');
+  catalog=data.companies;
+  floors=data.floors;
+  extraModules=data.modules;
+  if(!floors.length)throw new Error('No se encontraron pisos configurados.');
+  open(0);
+  get('loading').hidden=true;
+  get('workspace').hidden=false;
+  get('navigation').hidden=false;
+ }catch(error){get('loading').textContent=error.message;}
+})();
+let index=0,draft,selected=new Set();
+function node(tag,text){const n=document.createElement(tag);n.textContent=text;return n;}
+function report(text,error=false){get('status').textContent=text;get('status').className=error?'error':'muted';}
+function open(i){
+ index=i;floors[i].bedCompanies??={};draft=structuredClone(floors[i]);selected.clear();report('');
+ for(const field of ['type','rooms','beds'])get(field).value=draft[field];
+ renderNav();
+ get('title').textContent='Piso '+draft.module+draft.number;
+ setupFields();
+ render();
+}
+function renderNav(){
+ const nav=get('nav');nav.replaceChildren();
+ for(const module of modules()){
+  const label=node('h3','Módulo '+module);label.className='module';nav.append(label);
+  floors.forEach((floor,j)=>{
+   if(floor.module!==module)return;
+   const button=node('button','Piso '+floor.number+' · '+floor.type);
+   button.className='floor';button.setAttribute('aria-current',String(index===j));
+   button.onclick=()=>{if(index!==j && mayLeave())open(j)};nav.append(button);
+  });
+ }
+}
+function setupFields(){
+ const checks=get('checks');checks.replaceChildren();
+ for(const company of catalog){
+  const label=node('label',company),check=document.createElement('input');
+  check.type='checkbox';check.checked=draft.allowed.includes(company);
+  check.onchange=()=>{
+   if(!check.checked && (Object.values(draft.assignments).includes(company)||Object.values(draft.bedCompanies).some(beds=>Object.values(beds).includes(company)))){
+    check.checked=true;report('Retira primero las asignaciones de '+company+' en las habitaciones.',true);return;
+   }
+   draft.allowed=check.checked?[...draft.allowed,company]:draft.allowed.filter(name=>name!==company);
+   report('Cambios pendientes de guardar.');render();
+  };
+  label.prepend(check);checks.append(label);
+ }
+}
+function mayLeave(){return JSON.stringify(draft)===JSON.stringify(floors[index])||confirm('¿Descartar los cambios pendientes de este piso?');}
+function render(){
+ get('total').textContent=draft.rooms*draft.beds+' camas en total';
+ const plan=get('plan');plan.replaceChildren();
+ for(let number=1;number<=draft.rooms;number++){
+  const room=node('button','Habitación '+String(number).padStart(2,'0'));
+  room.className=draft.blocked.includes(number)?'room blocked':'room';
+  if(draft.blocked.includes(number))room.append(node('strong','Bloqueada'));room.setAttribute('aria-pressed',String(selected.has(number)));
+  const overrides=draft.bedCompanies[number];
+  if(overrides){
+   const names=new Set(Array.from({length:draft.beds},(_,i)=>overrides[i+1]??draft.assignments[number]).filter(Boolean));
+   if(names.size>1)room.append(node('strong','Empresas mixtas'));
+   for(let bed=1;bed<=draft.beds;bed++){
+    const company=overrides[bed]??draft.assignments[number];
+    room.append(node('small','Cama '+bed+' · '+(company||'Sin empresa')));
+   }
+  }else{
+   room.append(node(draft.assignments[number]?'strong':'small',draft.assignments[number]||'Sin empresa'));
+  }
+
+  room.onclick=()=>{selected.has(number)?selected.delete(number):selected.add(number);room.setAttribute('aria-pressed',String(selected.has(number)));selection()};
+  plan.append(room);
+ }
+ const companies=get('company'),previous=companies.value;
+ companies.replaceChildren(new Option('Sin empresa',''),...draft.allowed.map(name=>new Option(name,name)));
+ if(draft.allowed.includes(previous))companies.value=previous;
+ const bedChoice=get('bedChoice'),previousBed=bedChoice.value;
+ bedChoice.replaceChildren(new Option('Todas las camas',''),...Array.from({length:draft.beds},(_,i)=>new Option('Cama '+(i+1),String(i+1))));
+ if(Number(previousBed)<=draft.beds)bedChoice.value=previousBed;
+ selection();
+}
+function selection(){
+ const blocked=[...selected].filter(number=>draft.blocked.includes(number)).length;
+ const savedBlock=[...selected].some(number=>floors[index].blocked.includes(number));
+ const changedAssignments=[...selected].some(number=>draft.assignments[number]!==floors[index].assignments[number]||JSON.stringify(draft.bedCompanies[number])!==JSON.stringify(floors[index].bedCompanies?.[number]));
+ get('selected').textContent=selected.size+' seleccionadas';
+ get('assign').disabled=!selected.size||blocked>0||savedBlock;
+ get('lock').disabled=selected.size===blocked||changedAssignments;
+ get('unlock').disabled=blocked===0;
+}
+for(const lock of [true,false]){
+ get(lock?'lock':'unlock').onclick=()=>{
+  draft.blocked=lock
+   ? [...new Set([...draft.blocked,...selected])].sort((a,b)=>a-b)
+   : draft.blocked.filter(number=>!selected.has(number));
+  selected.clear();render();
+  report(lock?'Habitaciones bloqueadas. Guarda la configuración para confirmar.':'Guarda el desbloqueo para habilitar las asignaciones.');
+ };
+}
+get('type').onchange=()=>{draft.type=get('type').value;report('Cambios pendientes de guardar.');};
+for(const field of ['rooms','beds'])get(field).onchange=()=>{
+ const input=get(field), value=input.valueAsNumber;
+ if(!input.checkValidity()||!Number.isInteger(value)){input.value=draft[field];report('Ingresa una cantidad válida.',true);return;}
+ if((field==='rooms'&&[...draft.blocked,...floors[index].blocked].some(number=>number>value)) ||
+    (field==='beds'&&(draft.blocked.length||floors[index].blocked.length)&&value!==draft.beds)){
+  input.value=draft[field];report('Desbloquea las habitaciones afectadas antes de cambiar su capacidad.',true);return;
+ }
+ if(field==='rooms' && [...Object.keys(draft.assignments),...Object.keys(draft.bedCompanies)].some(n=>Number(n)>value)){
+  input.value=draft.rooms;report('Quita la empresa de las habitaciones que quedarían fuera antes de reducir la cantidad.',true);return;
+ }
+ if(field==='beds'&&Object.values(draft.bedCompanies).some(beds=>Object.keys(beds).some(bed=>Number(bed)>value))){
+  input.value=draft.beds;report('Quita la asignación por cama de las habitaciones afectadas antes de reducir la capacidad.',true);return;
+ }
+ draft[field]=value;
+ selected=new Set([...selected].filter(number=>number<=draft.rooms));
+ report('Cambios pendientes de guardar.');render();
+};
+get('assign').onclick=()=>{
+ if(get('assign').disabled)return;
+ const company=get('company').value,bed=get('bedChoice').value;
+ if(!bed&&[...selected].some(number=>draft.bedCompanies[number])
+    &&!confirm('¿Aplicar la misma empresa a todas las camas seleccionadas?'))return;
+ for(const number of selected){
+  if(bed){
+   draft.bedCompanies[number]??={};
+   draft.bedCompanies[number][bed]=company;
+  }else{
+   delete draft.bedCompanies[number];
+   if(company)draft.assignments[number]=company;
+   else delete draft.assignments[number];
+  }
+ }
+ selected.clear();render();report('Plano actualizado. Guarda la configuración para confirmar.');
+};
+get('save').onclick=async()=>{
+ get('workspace').disabled=true;
+ try{
+  draft.version=await rpc('guardar_piso',{datos:draft});
+  floors[index]=structuredClone(draft);
+  open(index);
+  report('Configuración guardada.');
+ }catch(error){report(error.message,true);}
+ finally{get('workspace').disabled=false;}
+};
+function askForFloor(module){
+ get('create').reset();
+ get('module').replaceChildren(...modules().map(code=>new Option(code,code)));
+ get('module').value=module;
+ get('createError').textContent='';
+ get('dialog').showModal();
+}
+get('new').onclick=()=>{if(mayLeave())askForFloor(draft.module);};
+get('newCompany').onclick=()=>{
+ get('createCompany').reset();
+ get('companyError').textContent='';
+ get('companyDialog').showModal();
+};
+get('cancelCompany').onclick=()=>get('companyDialog').close();
+get('createCompany').onsubmit=async event=>{
+ event.preventDefault();
+ const form=event.currentTarget;
+ const submit=form.querySelector('button[type=submit]');
+ get('companyError').textContent='';
+ submit.disabled=true;
+ try{
+  const company=await rpc('agregar_empresa',{nombre_empresa:get('companyName').value});
+  catalog.push(company);
+  catalog.sort((a,b)=>a.localeCompare(b,'es'));
+  setupFields();
+  get('companyDialog').close();
+  report('Empresa agregada al catálogo. Márcala en el piso para asignarla a sus habitaciones.');
+ }catch(error){get('companyError').textContent=error.message;}
+ finally{submit.disabled=false;}
+};
+get('newModule').onclick=()=>{
+ get('createModule').reset();get('moduleError').textContent='';get('moduleDialog').showModal();
+};
+get('cancelModule').onclick=()=>get('moduleDialog').close();
+get('createModule').onsubmit=async event=>{
+ event.preventDefault();
+ const module=get('moduleCode').value.trim().toUpperCase();
+ if(modules().includes(module)){get('moduleError').textContent='Este módulo ya existe.';return;}
+ const submit=event.currentTarget.querySelector('button[type=submit], button.primary');
+ submit.disabled=true;
+ try{
+  await rpc('agregar_modulo',{codigo_modulo:module});
+  extraModules.push(module);
+  extraModules.sort();
+  renderNav();
+  get('moduleDialog').close();
+  report('Módulo '+module+' agregado.');
+  if(JSON.stringify(draft)===JSON.stringify(floors[index]))askForFloor(module);
+ }catch(error){get('moduleError').textContent=error.message;}
+ finally{submit.disabled=false;}
+};
+get('cancel').onclick=()=>get('dialog').close();
+get('create').onsubmit=async event=>{
+ event.preventDefault();
+ const module=get('module').value,number=get('number').valueAsNumber;
+ if(floors.some(floor=>floor.module===module&&floor.number===number)){
+  get('createError').textContent='Este piso ya existe.';return;
+ }
+ const floor={module,number,type:'WORKER',rooms:1,beds:1,allowed:[],assignments:{},blocked:[]};
+ const submit=event.currentTarget.querySelector('button.primary');
+ submit.disabled=true;
+ try{
+  floor.version=await rpc('guardar_piso',{datos:floor});
+  floors.push(floor);
+  get('dialog').close();
+  open(floors.length-1);
+  report('Piso agregado. Ajusta la capacidad y guarda los cambios.');
+ }catch(error){get('createError').textContent=error.message;}
+ finally{submit.disabled=false;}
+};
+</script></html>

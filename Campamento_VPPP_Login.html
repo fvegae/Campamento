@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="es">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Campamento VPPP</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#eef1f3;color:#103a4a;font:16px system-ui}
+main{max-width:440px;margin:24px auto;background:white;border-radius:8px;overflow:hidden;box-shadow:0 6px 20px #103a4a16}
+header{padding:24px 28px;background:#103a4a;color:white}h1{font-size:23px;margin:0}h2{font-size:18px;margin-top:0}
+section{padding:26px 28px}label{display:grid;gap:5px;margin:12px 0;font-size:14px;font-weight:650}
+input,button,a{font:inherit;border:1px solid #c2d1d8;border-radius:5px;padding:10px}
+button{cursor:pointer;background:#103a4a;color:white}a{display:block;color:inherit;text-decoration:none;background:#f3f7f8;margin-bottom:12px}
+small{display:block;margin-top:5px}#status{font-size:14px;color:#97392d}button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid #548eb0;outline-offset:2px}
+@media(max-width:480px){main{margin:14px}}
+</style>
+<main>
+ <header><h1>Campamento VPPP</h1></header>
+ <section>
+  <form id="login" method="post">
+   <h2>Iniciar sesión</h2>
+   <label>Correo<input name="email" type="email" autocomplete="username" required></label>
+   <label>Contraseña<input name="password" type="password" autocomplete="current-password" required></label>
+   <button type="submit">Ingresar</button>
+  </form>
+  <div id="menu" hidden>
+   <h2>Menú principal</h2>
+   <p id="account"></p>
+   <a href="Campamento_VPPP_Configuracion.html"><strong>Configuración</strong><small>Administra módulos, pisos, habitaciones y empresas.</small></a>
+   <a href="Campamento_VPPP_RomList.html"><strong>Validación de RomList</strong><small>Compara el Excel con las habitaciones configuradas.</small></a>
+   <a href="Campamento_VPPP_Consulta_Camas.html"><strong>Consulta y asignación de camas</strong><small>Consulta la ocupación y asigna trabajadores.</small></a>
+   <button id="logout">Cerrar sesión</button>
+  </div>
+  <p id="status" role="status"></p>
+ </section>
+</main>
+<script src="Campamento_VPPP_Conexion.js"></script>
+<script>
+const form=document.getElementById('login');
+const menu=document.getElementById('menu');
+const statusText=document.getElementById('status');
+
+function showMenu(session){
+ document.getElementById('account').textContent=session.user.email;
+ form.hidden=true;
+ menu.hidden=false;
+ statusText.textContent='';
+ watchSession();
+}
+
+form.onsubmit=async event=>{
+ event.preventDefault();
+ const button=form.querySelector('button');
+ button.disabled=true;
+ statusText.textContent='Validando acceso…';
+ try{
+  const session=await login(form.elements.email.value.trim(),form.elements.password.value);
+  if(!session){statusText.textContent='Acceso inválido. Revisa tus datos o inténtalo más tarde.';return;}
+  saveSession(session);
+  showMenu(session);
+ }catch(error){
+  statusText.textContent=error.status===403?'Tu cuenta no tiene acceso a Campamento VPPP.'
+   :error.status===400||error.status===401?'Verifica tu correo y contraseña.':error.message;
+ }finally{
+  form.elements.password.value='';
+  button.disabled=false;
+ }
+};
+
+document.getElementById('logout').onclick=endSession;
+(async()=>{
+ if(!currentSession())return;
+ try{await rpc('configuracion');showMenu(currentSession());}
+ catch(error){statusText.textContent=error.message;}
+})();
+</script>
+</html>
