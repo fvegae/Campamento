@@ -4,11 +4,11 @@
 *{box-sizing:border-box}body{margin:0;background:#eff4f9;color:#172f4a;font:16px system-ui}header{background:#102641;color:white;padding:18px max(24px,calc((100vw - 1160px)/2));display:flex;justify-content:space-between}main{max-width:1208px;margin:auto;padding:32px 24px}h1{font-size:36px;letter-spacing:-1px;margin:0 0 8px}h2{font-size:21px;margin:0 0 16px}p{color:#4d647d;margin:8px 0 16px}.panel{background:white;border:1px solid #d6e1ec;border-radius:14px;padding:20px;margin:16px 0}.bar{display:flex;align-items:end;justify-content:space-between;gap:12px;flex-wrap:wrap}.controls{display:flex;gap:12px;align-items:end;flex-wrap:wrap}label{display:grid;gap:6px;font-weight:650;font-size:14px}button,select{border:1px solid #a4b8cc;border-radius:8px;background:white;padding:9px 13px;color:inherit;font:inherit}button{cursor:pointer}button:disabled{opacity:.5;cursor:default}.primary{background:#174e85;color:white;border-color:#174e85}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(185px,1fr));gap:12px;margin:16px 0}.cards button{text-align:left;padding:13px}.cards button[aria-pressed=true]{background:#e7effb;border-color:#527ba9}.cards strong{display:block;font-size:26px}.scroll{overflow:auto}table{width:100%;border-collapse:collapse;text-align:left}td,th{padding:11px;border-bottom:1px solid #dbe3ed;font-size:14px}th{background:#edf3fa}.warn{color:#8f3920}.ok{color:#14634c}.muted{color:#516985}dialog{border:0;border-radius:14px;padding:22px;max-width:min(480px,90vw)}dialog::backdrop{background:#10264177}[hidden]{display:none!important}:focus-visible{outline:3px solid #457bc0;outline-offset:2px}
 </style>
 <header><strong>Campamento VPPP</strong><a href="Campamento_VPPP_Login.html" style="color:white">Volver al menú</a></header>
-<main><h1>Carga y validación de RomList</h1><p>Carga el padrón inicial desde la hoja DATA y aplica la Empresa Dueña del Contrato a cada cama VPPP.</p>
+<main><h1>Carga y validación de RomList</h1><p>Analiza la hoja DATA para cargar o actualizar el padrón VPPP.</p>
 <section class="panel"><h2>Archivo de origen</h2><div class="controls"><label>RomList<input id="upload" type="file" accept=".xlsx"></label><button class="primary" id="analyze" disabled>Analizar RomList</button></div><p id="status" role="status"></p></section>
 <section class="panel" id="results" hidden><h2>Resultado de la validación</h2><div id="cards" class="cards" aria-label="Filtrar resultados"></div>
 <div class="scroll"><table><thead><tr><th>Fila Excel</th><th>Piso</th><th>Habitación / cama</th><th>DNI</th><th>Empresa Dueña del Contrato</th><th>Empresa configurada</th><th>Resultado</th></tr></thead><tbody id="rows"></tbody></table></div>
-<p id="summary"></p><button class="primary" id="loadInitial" disabled>Confirmar carga inicial</button></section></main>
+<p id="summary"></p><details id="missing" hidden><summary id="missingSummary"></summary><ul id="missingList"></ul></details><button class="primary" id="loadInitial" disabled>Confirmar carga inicial</button></section></main>
 <script src="Campamento_VPPP_Conexion.js"></script>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script>
@@ -17,7 +17,7 @@ let floors=Object.create(null);
 const groups={ok:'Conformes',warn:'Con observaciones',out:'Fuera del alcance VPPP'};
 let analysis=null,selected='ok';
 function code(row){return row.floor+'-'+String(row.room).padStart(2,'0')+'-'+row.bed;}
-function validate(rows){
+function validate(rows,initial){
  const documents=new Map(),beds=new Map();
  for(const row of rows.filter(r=>Object.hasOwn(floors,r.floor))){
   documents.set(row.dni,(documents.get(row.dni)||0)+1);
@@ -30,6 +30,8 @@ function validate(rows){
   if(row.room<1||row.room>floor.rooms)issues.push('Habitación fuera de la configuración');
   else{
    if(floor.blocked.includes(row.room))issues.push('Habitación bloqueada');
+   if(!initial&&expected.toUpperCase()!==row.company.toUpperCase())
+    issues.push(expected?'Empresa distinta a la configurada':'Cama sin empresa configurada');
   }
   if(row.bed<1||row.bed>floor.beds)issues.push('Cama fuera de la configuración');
   if(documents.get(row.dni)>1)issues.push('DNI duplicado');
@@ -58,8 +60,12 @@ function render(){
   });
  }
  if(!counts[selected]){const cell=get('rows').insertRow().insertCell();cell.colSpan=7;cell.textContent='Sin registros en esta categoría.';}
- get('loadInitial').disabled=analysis.saved||analysis.saving||counts.warn>0||counts.ok===0;
- get('summary').textContent=analysis.saved?'Carga inicial guardada.':counts.warn
+ const action=get('loadInitial');
+ action.textContent=analysis.initial?'Confirmar carga inicial':'Actualizar padrón';
+ action.disabled=analysis.saved||analysis.saving||counts.warn>0||(counts.ok===0&&!analysis.missing.length);
+ get('missing').hidden=analysis.saved||!analysis.missing.length;
+ get('missingSummary').textContent=analysis.missing.length+' trabajadores no aparecen en RomList. Sus camas se liberarán al actualizar.';
+ get('summary').textContent=analysis.saved?'Padrón guardado.':counts.warn
   ? 'Revisa las observaciones en el Excel o en Configuración.'
   : 'Validación finalizada. Los registros fuera del alcance se muestran por separado.';
 }
@@ -101,11 +107,26 @@ analyze.onclick=async()=>{
  try{
   const rows=await readWorkbook(file);
   if(!rows.length)throw new Error('La hoja DATA no contiene registros.');
-  const data=await rpc('configuracion');
+  const data=await rpc('preparar_romlist');
   floors=Object.fromEntries(data.floors.map(floor=>[
    floor.module+floor.number,{...floor,companies:floor.assignments}
   ]));
-  analysis={name:file.name,rows:validate(rows),saved:false,saving:false};
+  const documents=[...new Set(rows.map(row=>row.dni).filter(Boolean))];
+  const present=new Set(documents);
+  const missing=data.occupants.filter(person=>!present.has(person.document));
+  const initial=data.occupants.length===0;
+  const missingList=get('missingList');
+  missingList.replaceChildren();
+  for(const person of missing){
+   const item=document.createElement('li');
+   item.textContent=person.name+' · DNI '+person.document+' · '+code({
+    floor:person.module+person.floor,room:person.room,bed:person.bed
+   });
+   missingList.append(item);
+  }
+  get('missing').open=missing.length>0;
+  analysis={name:file.name,rows:validate(rows,initial),initial,missing,documents,
+   revision:data.revision,saved:false,saving:false};
   selected=analysis.rows.some(row=>row.group==='warn')?'warn':analysis.rows.some(row=>row.group==='ok')?'ok':'out';
   get('results').hidden=false;
   get('status').textContent='';
@@ -116,7 +137,10 @@ analyze.onclick=async()=>{
 get('loadInitial').onclick=async()=>{
  if(get('loadInitial').disabled)return;
  const rows=analysis.rows.filter(row=>row.group==='ok');
- if(!confirm('¿Guardar '+rows.length+' registros VPPP y aplicar las empresas dueñas de los contratos? Esta carga inicial se realiza una sola vez.'))return;
+ const message=analysis.initial
+  ? '¿Guardar la carga inicial de '+rows.length+' registros VPPP?'
+  : '¿Actualizar el padrón? Se liberarán '+analysis.missing.length+' camas de trabajadores que no aparecen en el Excel. Sus empresas asignadas se conservarán.';
+ if(!confirm(message))return;
  analysis.saving=true;
  upload.disabled=analyze.disabled=true;
  render();
@@ -126,7 +150,7 @@ get('loadInitial').onclick=async()=>{
    documento:row.dni,huesped:row.data[5],empresa:row.company,
    tipo_cama:row.data[3],contrato:row.data[7],empresa_duena:row.data[8]
   }));
-  const total=await rpc('cargar_romlist_inicial',{archivo:analysis.name,filas});
+  const total=await rpc('guardar_romlist',{archivo:analysis.name,filas,documentos_excel:analysis.documents,revision:analysis.revision});
   analysis.saved=true;
   get('status').textContent='Se guardaron '+total+' registros VPPP.';
  }catch(error){get('status').textContent=error.message;}
