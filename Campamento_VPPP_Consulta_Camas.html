@@ -9,6 +9,7 @@
 .remove-guest:disabled{opacity:.55;cursor:wait}
 .filters .module-only{display:flex;align-items:center;align-self:end;min-height:40px}
 .filters .module-only input{min-height:0;accent-color:#174e85}
+.room.company-match{border-color:#174e85;box-shadow:inset 0 0 0 1px #174e85}
 </style>
 <header><strong>Campamento VPPP</strong><a href="Campamento_VPPP_Login.html" style="color:white">Volver al menú</a></header><main>
 <h1>Consulta y asignación de camas</h1><p>Selecciona una habitación en el plano para consultar sus camas.</p>
@@ -64,12 +65,13 @@ function render(){
    const count=beds.filter(bed=>bed.occupant).length;
    const state=otherCompany?'other-company':count===0?'free':count===beds.length?'full':'partial';
    const names=[...new Set(beds.map(bed=>bed.company).filter(Boolean))];
-   const tile=el('button','','room '+state);
+   const companyMatch=Boolean(company&&names.includes(company));
+   const tile=el('button','','room '+state+(companyMatch?' company-match':''));
    tile.append(el('strong',String(room).padStart(2,'0')),
     el('small',names.length>1?'Empresas mixtas':names[0]||'Sin empresa',
-     !names.length||(company&&names.includes(company))?'company':''),
+     !names.length||companyMatch?'company':''),
     el('small',count+' de '+beds.length+' camas ocupadas'));
-   if(company&&names.length>1&&names.includes(company)){
+   if(companyMatch&&names.length>1){
     tile.append(el('small',company,'company'));
    }
    const unassigned=beds.filter(availableForCompany).length;
