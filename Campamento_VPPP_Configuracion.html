@@ -184,6 +184,16 @@ get('assign').onclick=()=>{
  const company=get('company').value,bed=get('bedChoice').value;
  if(!bed&&[...selected].some(number=>draft.bedCompanies[number])
     &&!confirm('¿Aplicar la misma empresa a todas las camas seleccionadas?'))return;
+ const wouldChangeOccupiedBed=[...selected].some(number=>
+  (draft.occupiedBeds?.[number]??[]).some(occupiedBed=>
+   (!bed||Number(bed)===occupiedBed)
+   && (draft.bedCompanies[number]?.[occupiedBed]??draft.assignments[number]??'')!==company
+  )
+ );
+ if(wouldChangeOccupiedBed){
+  report('Retira primero al huésped antes de cambiar o quitar la empresa de una cama ocupada.',true);
+  return;
+ }
  for(const number of selected){
   if(bed){
    draft.bedCompanies[number]??={};

@@ -91,6 +91,11 @@ function openRoom(floor,room){
    const person=bed.occupant;
    row.append(el('p',person.name+' · DNI '+person.document),
     el('small',person.company+' · '+person.origin));
+   if(!blocked&&matchesCompany(bed)){
+    const remove=el('button','Retirar huésped','action');
+    remove.onclick=()=>removeGuest(floor,room,bed,remove);
+    row.append(remove);
+   }
   }else if(!blocked&&bed.company&&matchesCompany(bed)){
    const button=el('button','Asignar trabajador','action');
    button.onclick=()=>showForm(floor,room,bed);
@@ -99,6 +104,24 @@ function openRoom(floor,room){
   list.append(row);
  }
  if(!dialog.open)dialog.showModal();
+}
+
+async function removeGuest(floor,room,bed,button){
+ if(saving||floor.blocked.includes(room)||!matchesCompany(bed))return;
+ if(!confirm('¿Retirar a '+bed.occupant.name+' de la cama '+bed.number+'? Se conservará la empresa asignada.'))return;
+ saving=button.disabled=true;
+ byId('entry').hidden=true;
+ try{
+  await rpc('retirar_huesped',{
+   codigo:floor.module,numero_piso:floor.number,numero_habitacion:room,
+   numero_cama:bed.number,documento_esperado:bed.occupant.document
+  });
+  occupants.delete(key(floor.module,floor.number,room,bed.number));
+  render();
+  openRoom(floor,room);
+  byId('feedback').textContent='Huésped retirado. La cama quedó libre.';
+ }catch(error){byId('feedback').textContent=error.message;}
+ finally{saving=button.disabled=false;}
 }
 
 function field(label,input){
