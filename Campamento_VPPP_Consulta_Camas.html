@@ -107,7 +107,7 @@ function openRoom(floor,room){
   row.append(el('strong','Cama '+bed.number),el('p',bed.company||'Sin empresa configurada'));
   if(bed.occupant){
    const person=bed.occupant;
-   row.append(el('p',person.name+' · DNI '+person.document),
+   row.append(el('p',person.name+' · Documento '+person.document),
     el('small',person.company+' · '+person.origin));
    if(!blocked&&matchesCompany(bed)){
     const remove=el('button','','remove-guest');
@@ -156,9 +156,8 @@ function showForm(floor,room,bed){
  if(saving||floor.blocked.includes(room)||!bed.company||!matchesCompany(bed))return;
  const form=byId('entry'),dni=el('input'),name=el('input'),button=el('button','Guardar asignación','action');
  dni.required=name.required=true;
- dni.inputMode='numeric';dni.pattern='[0-9]{8}';dni.maxLength=8;
  form.replaceChildren(el('p','Cama '+bed.number+' · '+bed.company),
-  field('DNI del trabajador',dni),field('Nombre del trabajador',name),button);
+  field('Documento de identidad',dni),field('Nombre del trabajador',name),button);
  form.hidden=false;
  dni.focus();
  form.onsubmit=async event=>{
