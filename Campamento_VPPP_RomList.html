@@ -17,10 +17,26 @@ let floors=Object.create(null);
 const groups={ok:'Conformes',warn:'Con observaciones',out:'Fuera del alcance VPPP'};
 let analysis=null,selected='ok';
 function code(row){return row.floor+'-'+String(row.room).padStart(2,'0')+'-'+row.bed;}
-function validate(rows,initial){
- const documents=new Map(),beds=new Map();
- for(const row of rows.filter(r=>Object.hasOwn(floors,r.floor))){
-  documents.set(row.dni,(documents.get(row.dni)||0)+1);
+const roomKey=(floor,room)=>JSON.stringify([floor,room]);
+function validate(rows,initial,occupants,documents){
+ const inside=rows.filter(row=>Object.hasOwn(floors,row.floor));
+ const incoming=new Set(inside.map(row=>row.dni));
+ const present=new Set(documents);
+ const roomSexes=new Map();
+ for(const row of inside){
+  if(row.sex!=='F'&&row.sex!=='M')continue;
+  const key=roomKey(row.floor,row.room);
+  if(!roomSexes.has(key))roomSexes.set(key,new Set());
+  roomSexes.get(key).add(row.sex);
+ }
+ for(const person of occupants){
+  if(present.has(person.document)&&!incoming.has(person.document)){
+   roomSexes.get(roomKey(person.module+person.floor,person.room))?.add(person.sex??'');
+  }
+ }
+ const documentCounts=new Map(),beds=new Map();
+ for(const row of inside){
+  documentCounts.set(row.dni,(documentCounts.get(row.dni)||0)+1);
   beds.set(code(row),(beds.get(code(row))||0)+1);
  }
  return rows.map(row=>{
@@ -34,7 +50,9 @@ function validate(rows,initial){
     issues.push(expected?'Empresa distinta a la configurada':'Cama sin empresa configurada');
   }
   if(row.bed<1||row.bed>floor.beds)issues.push('Cama fuera de la configuración');
-  if(documents.get(row.dni)>1)issues.push('DNI duplicado');
+  if(roomSexes.get(roomKey(row.floor,row.room))?.size>1)
+   issues.push('Habitación con sexos distintos o con un huésped sin sexo registrado');
+  if(documentCounts.get(row.dni)>1)issues.push('DNI duplicado');
   if(beds.get(code(row))>1)issues.push('Cama duplicada');
   return {...row,expected,group:issues.length?'warn':'ok',result:issues.join(' · ')||(expected.toUpperCase()===row.company.toUpperCase()?'Conforme':'Se asignará la Empresa Dueña del Contrato')};
  });
@@ -79,6 +97,9 @@ async function readWorkbook(file){
  const rows=XLSX.utils.sheet_to_json(sheet,{header:1,raw:false,defval:'',blankrows:true,range:0});
  if(!rows.length||headers.some((header,i)=>normalize(rows[0][i])!==normalize(header)))
   throw new Error('La hoja DATA debe tener las nueve columnas del patrón RomList, en el orden original.');
+ const sexColumns=rows[0].flatMap((header,index)=>normalize(header)==='SEXO'?[index]:[]);
+ if(sexColumns.length!==1)throw new Error('La hoja DATA debe tener exactamente una columna SEXO.');
+ const sexColumn=sexColumns[0];
  return rows.slice(1).flatMap((cells,index)=>{
   if(!cells.some(value=>String(value).trim()))return [];
   const floor=normalize(cells[0]),roomCode=normalize(cells[1]),bedCode=normalize(cells[2]);
@@ -87,10 +108,12 @@ async function readWorkbook(file){
   if(!floor)throw new Error('La fila '+(index+2)+' no tiene piso.');
   if(!Number.isInteger(room)||roomCode!==floor+'-'+String(room).padStart(2,'0'))issues.push('Código de habitación inválido');
   if(!Number.isInteger(bed)||bedCode!==roomCode+'-'+bed)issues.push('Código de cama inválido');
+  const sex=normalize(cells[sexColumn]);
+  if(sex!=='F'&&sex!=='M')issues.push('SEXO debe ser F o M');
   if(!dni)issues.push('Documento faltante');
   if(!company||company.length>200)issues.push('Empresa Dueña del Contrato faltante o inválida');
   if(!String(cells[5]).trim())issues.push('Huésped faltante');
-  return [{row:index+2,floor,room,bed,bedCode,dni,company,issues,data:cells.slice(0,headers.length)}];
+  return [{row:index+2,floor,room,bed,bedCode,dni,company,sex,issues,data:cells.slice(0,headers.length)}];
  });
 }
 function clearAnalysis(){
@@ -125,7 +148,7 @@ analyze.onclick=async()=>{
    missingList.append(item);
   }
   get('missing').open=missing.length>0;
-  analysis={name:file.name,rows:validate(rows,initial),initial,missing,documents,
+  analysis={name:file.name,rows:validate(rows,initial,data.occupants,documents),initial,missing,documents,
    revision:data.revision,saved:false,saving:false};
   selected=analysis.rows.some(row=>row.group==='warn')?'warn':analysis.rows.some(row=>row.group==='ok')?'ok':'out';
   get('results').hidden=false;
@@ -148,7 +171,7 @@ get('loadInitial').onclick=async()=>{
   const filas=rows.map(row=>({
    fila:row.row,codigo_piso:row.floor,habitacion:row.room,cama:row.bed,
    documento:row.dni,huesped:row.data[5],empresa:row.company,
-   tipo_cama:row.data[3],contrato:row.data[7],empresa_duena:row.data[8]
+   tipo_cama:row.data[3],contrato:row.data[7],empresa_duena:row.data[8],sexo:row.sex
   }));
   const total=await rpc('guardar_romlist',{archivo:analysis.name,filas,documentos_excel:analysis.documents,revision:analysis.revision});
   analysis.saved=true;
