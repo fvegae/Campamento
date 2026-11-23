@@ -71,7 +71,11 @@ function render(){
   get('cards').append(btn);
  }
  get('rows').replaceChildren();
- for(const row of analysis.rows.filter(row=>row.group===selected)){
+ const visibleRows=analysis.rows.filter(row=>row.group===selected);
+ if(selected==='warn'){
+  visibleRows.sort((a,b)=>a.result.localeCompare(b.result,'es')||a.row-b.row);
+ }
+ for(const row of visibleRows){
   const tr=get('rows').insertRow();
   [row.row,row.floor,row.bedCode||code(row),row.dni,row.company,row.expected||(row.group==='out'?'—':'Sin empresa'),row.result].forEach((value,index)=>{
    const td=tr.insertCell();
