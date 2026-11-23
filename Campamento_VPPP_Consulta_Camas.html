@@ -10,10 +10,12 @@
 .filters .module-only{display:flex;align-items:center;align-self:end;min-height:40px}
 .checkbox-row{display:flex;align-items:center}.checkbox-row input,.filters .module-only input{min-height:0;accent-color:#174e85}
 .room.company-match{border-color:#174e85;box-shadow:inset 0 0 0 1px #174e85}
+.room.person-match{background:#dbeafe;border-color:#1d4ed8;box-shadow:inset 0 0 0 2px #1d4ed8}
+.person-match-label{color:#1e3a8a;font-weight:750}
 </style>
 <header><strong>Campamento VPPP</strong><a href="Campamento_VPPP_Login.html" style="color:white">Volver al menú</a></header><main>
 <h1>Consulta y asignación de camas</h1><p>Selecciona una habitación en el plano para consultar sus camas.</p>
-<div class="filters"><label>Empresa<select id="company"><option value="">Todas las empresas</option></select></label><label>Tipo de piso<select id="type"><option value="">Todos los tipos</option><option>WORKER</option><option>STAFF</option><option>MIXTO</option><option>MANAGER</option></select></label><label>Buscar módulo<input id="moduleSearch" type="search" placeholder="Ej. SD"></label><label class="module-only"><input id="companyModulesOnly" type="checkbox" disabled>Solo módulos de la empresa seleccionada</label><label class="module-only"><input id="femaleOnly" type="checkbox">Habitaciones femeninas o vacías</label></div>
+<div class="filters"><label>Empresa<select id="company"><option value="">Todas las empresas</option></select></label><label>Tipo de piso<select id="type"><option value="">Todos los tipos</option><option>WORKER</option><option>STAFF</option><option>MIXTO</option><option>MANAGER</option></select></label><label>Buscar módulo<input id="moduleSearch" type="search" placeholder="Ej. SD"></label><label>Buscar persona<input id="personSearch" type="search" placeholder="DNI o nombre" autocomplete="off"></label><label class="module-only"><input id="companyModulesOnly" type="checkbox" disabled>Solo módulos de la empresa seleccionada</label><label class="module-only"><input id="femaleOnly" type="checkbox">Habitaciones femeninas o vacías</label></div>
 <div class="legend"><span class="free">Libre</span><span class="partial">Ocupación parcial</span><span class="full">Completa</span><span class="other-company">No corresponde a la empresa filtrada</span></div>
 <section id="map" aria-label="Plano de habitaciones"></section><p id="msg" role="status"></p></main>
 <dialog id="detail"><button class="action close" id="close">Cerrar</button><h2 id="roomTitle"></h2><p id="roomCompany" class="company"></p><section id="beds"></section><form id="entry" hidden></form><p id="feedback" role="status"></p></dialog>
@@ -50,9 +52,20 @@ function matchesFemaleFilter(beds){
  return guests.every(bed=>bed.occupant.sex==='F');
 }
 
+const normalizePersonText=value=>String(value??'').normalize('NFD').replace(/\p{M}/gu,'').toLowerCase().trim();
+
+function matchesPerson(person,terms){
+ if(!person)return false;
+ const name=normalizePersonText(person.name);
+ const document=normalizePersonText(person.document);
+ return terms.every(term=>name.includes(term)||document.includes(term));
+}
+
 function render(){
  const map=byId('map'),company=byId('company').value,type=byId('type').value;
  const moduleQuery=byId('moduleSearch').value.trim().toUpperCase();
+ const personTerms=normalizePersonText(byId('personSearch').value).split(/\s+/).filter(Boolean);
+ let personCount=0;
  const moduleOnly=byId('companyModulesOnly');
  moduleOnly.disabled=!company;
  map.replaceChildren();
@@ -66,7 +79,16 @@ function render(){
   if(company&&!eligibleRooms.some(({beds})=>beds.some(bed=>bed.company===company||(!moduleOnly.checked&&availableForCompany(bed)))))continue;
   const femaleOnly=byId('femaleOnly').checked;
   const rooms=femaleOnly?eligibleRooms.filter(({beds})=>matchesFemaleFilter(beds)):eligibleRooms;
+  const roomMatches=new Map();
+  if(personTerms.length){
+   for(const {room,beds} of rooms){
+    const count=beds.filter(bed=>(!company||bed.company===company)&&matchesPerson(bed.occupant,personTerms)).length;
+    if(count)roomMatches.set(room,count);
+   }
+   if(!roomMatches.size)continue;
+  }
   const section=el('article','','floor'),plan=el('div','','plan');
+  let firstMatch;
   for(const {room,beds} of rooms){
    const otherCompany=company&&!beds.some(bed=>bed.company===company||availableForCompany(bed));
    const count=beds.filter(bed=>bed.occupant).length;
@@ -78,6 +100,13 @@ function render(){
     el('small',names.length>1?'Empresas mixtas':names[0]||'Sin empresa',
      !names.length||companyMatch?'company':''),
     el('small',count+' de '+beds.length+' camas ocupadas'));
+   const matchingPeople=roomMatches.get(room);
+   if(matchingPeople){
+    tile.classList.add('person-match');
+    tile.append(el('small',matchingPeople===1?'1 coincidencia':matchingPeople+' coincidencias','person-match-label'));
+    firstMatch??=tile;
+    personCount+=matchingPeople;
+   }
    if(companyMatch&&names.length>1){
     tile.append(el('small',company,'company'));
    }
@@ -99,8 +128,14 @@ function render(){
   floorInfo.append(el('strong',freeBeds+(freeBeds===1?' cama libre':' camas libres')));
   section.append(el('h2','Módulo '+floor.module),floorInfo,plan);
   map.append(section);
+  if(firstMatch){
+   const tileBounds=firstMatch.getBoundingClientRect(),planBounds=plan.getBoundingClientRect();
+   if(tileBounds.right>planBounds.right)plan.scrollLeft=tileBounds.left-planBounds.left-10;
+  }
  }
- byId('msg').textContent=map.childElementCount?map.childElementCount+' pisos en la vista':'No hay pisos que coincidan con los filtros.';
+ byId('msg').textContent=personTerms.length
+  ?personCount===0?'No se encontraron personas con los filtros actuales.':personCount===1?'1 persona encontrada.':personCount+' personas encontradas.'
+  :map.childElementCount?map.childElementCount+' pisos en la vista':'No hay pisos que coincidan con los filtros.';
 }
 
 function matchesCompany(bed){
@@ -222,6 +257,7 @@ async function load(){
   byId('femaleOnly').onchange=render;
   byId('companyModulesOnly').onchange=render;
   byId('moduleSearch').addEventListener('input',render);
+  byId('personSearch').addEventListener('input',render);
  }catch(error){byId('msg').textContent=error.message;}
 }
 byId('close').onclick=()=>{if(!saving)byId('detail').close();};
