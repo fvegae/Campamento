@@ -180,8 +180,8 @@ analyze.onclick=async()=>{
     const item=document.createElement('li');
     const location=code({floor:person.module+person.floor,room:person.room,bed:person.bed});
     item.textContent=[
-     person.name,'DNI '+person.document,location,
-     person.company||'Sin empresa',origin
+     person.company||'Sin empresa',person.document,
+     person.name,location,origin
     ].join(' · ');
     list.append(item);
    }
