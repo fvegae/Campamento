@@ -8,7 +8,7 @@
 <section class="panel"><h2>Archivo de origen</h2><div class="controls"><label>RomList<input id="upload" type="file" accept=".xlsx"></label><button class="primary" id="analyze" disabled>Analizar RomList</button></div><p id="status" role="status"></p></section>
 <section class="panel" id="results" hidden><h2>Resultado de la validación</h2><div id="cards" class="cards" aria-label="Filtrar resultados"></div>
 <div class="scroll"><table><thead><tr><th>Fila Excel</th><th>Piso</th><th>Habitación / cama</th><th>DNI</th><th>Empresa Dueña del Contrato</th><th>Empresa configurada</th><th>Resultado</th></tr></thead><tbody id="rows"></tbody></table></div>
-<p id="summary"></p><details id="missing" hidden><summary id="missingSummary"></summary><ul id="missingList"></ul></details><button class="primary" id="loadInitial" disabled>Confirmar carga inicial</button></section></main>
+<p id="summary"></p><details id="missing" hidden><summary id="missingSummary"></summary><div id="missingList"></div></details><button class="primary" id="loadInitial" disabled>Confirmar carga inicial</button></section></main>
 <script src="Campamento_VPPP_Conexion.js"></script>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script>
@@ -139,13 +139,29 @@ analyze.onclick=async()=>{
   const missing=data.occupants.filter(person=>!present.has(person.document));
   const initial=data.occupants.length===0;
   const missingList=get('missingList');
-  missingList.replaceChildren();
+  const missingByOrigin=new Map([
+   ['Registro manual',[]],['RomList',[]],['Origen no disponible',[]]
+  ]);
   for(const person of missing){
-   const item=document.createElement('li');
-   item.textContent=person.name+' · DNI '+person.document+' · '+code({
-    floor:person.module+person.floor,room:person.room,bed:person.bed
-   });
-   missingList.append(item);
+   const origin=missingByOrigin.has(person.origin)?person.origin:'Origen no disponible';
+   missingByOrigin.get(origin).push(person);
+  }
+  missingList.replaceChildren();
+  for(const [origin,people] of missingByOrigin){
+   if(!people.length)continue;
+   const heading=document.createElement('h3');
+   heading.textContent=origin+' ('+people.length+')';
+   const list=document.createElement('ul');
+   for(const person of people){
+    const item=document.createElement('li');
+    const location=code({floor:person.module+person.floor,room:person.room,bed:person.bed});
+    item.textContent=[
+     person.name,'DNI '+person.document,location,
+     person.company||'Sin empresa',origin
+    ].join(' · ');
+    list.append(item);
+   }
+   missingList.append(heading,list);
   }
   get('missing').open=missing.length>0;
   analysis={name:file.name,rows:validate(rows,initial,data.occupants,documents),initial,missing,documents,
