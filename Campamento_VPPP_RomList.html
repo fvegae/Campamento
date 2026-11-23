@@ -8,7 +8,10 @@
 <section class="panel"><h2>Archivo de origen</h2><div class="controls"><label>RomList<input id="upload" type="file" accept=".xlsx"></label><button class="primary" id="analyze" disabled>Analizar RomList</button></div><p id="status" role="status"></p></section>
 <section class="panel" id="results" hidden><h2>Resultado de la validación</h2><div id="cards" class="cards" aria-label="Filtrar resultados"></div>
 <div class="scroll"><table><thead><tr><th>Fila Excel</th><th>Piso</th><th>Habitación / cama</th><th>DNI</th><th>Empresa Dueña del Contrato</th><th>Empresa configurada</th><th>Resultado</th></tr></thead><tbody id="rows"></tbody></table></div>
-<p id="summary"></p><details id="missing" hidden><summary id="missingSummary"></summary><div id="missingList"></div></details><button class="primary" id="loadInitial" disabled>Confirmar carga inicial</button></section></main>
+<p id="summary"></p><details id="missing" hidden><summary id="missingSummary"></summary><div class="scroll" id="missingCompanies" hidden><table>
+<caption style="text-align:left;font-weight:700;padding:12px 0">Trabajadores ausentes por empresa</caption>
+<thead><tr><th scope="col">Empresa</th><th scope="col">Cantidad</th></tr></thead>
+<tbody id="missingCompanyRows"></tbody></table></div><div id="missingList"></div></details><button class="primary" id="loadInitial" disabled>Confirmar carga inicial</button></section></main>
 <script src="Campamento_VPPP_Conexion.js"></script>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script>
@@ -138,6 +141,22 @@ analyze.onclick=async()=>{
   const present=new Set(documents);
   const missing=data.occupants.filter(person=>!present.has(person.document));
   const initial=data.occupants.length===0;
+  const companyCounts=new Map();
+  for(const person of missing){
+   const company=person.company||'Sin empresa';
+   companyCounts.set(company,(companyCounts.get(company)||0)+1);
+  }
+  const companyRows=get('missingCompanyRows');
+  companyRows.replaceChildren();
+  const companies=[...companyCounts].sort(([a,countA],[b,countB])=>
+   countB-countA||a.localeCompare(b,'es',{sensitivity:'base'})
+  );
+  for(const [company,count] of companies){
+   const row=companyRows.insertRow();
+   row.insertCell().textContent=company;
+   row.insertCell().textContent=count;
+  }
+  get('missingCompanies').hidden=!companies.length;
   const missingList=get('missingList');
   const missingByOrigin=new Map([
    ['Registro manual',[]],['RomList',[]],['Origen no disponible',[]]
@@ -152,6 +171,7 @@ analyze.onclick=async()=>{
    const heading=document.createElement('h3');
    heading.textContent=origin+' ('+people.length+')';
    const list=document.createElement('ul');
+   people.sort((a,b)=>(a.company||'Sin empresa').localeCompare(b.company||'Sin empresa','es',{sensitivity:'base'}));
    for(const person of people){
     const item=document.createElement('li');
     const location=code({floor:person.module+person.floor,room:person.room,bed:person.bed});
