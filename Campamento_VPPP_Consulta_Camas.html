@@ -15,6 +15,7 @@
 </style>
 <header><strong>Campamento VPPP</strong><a href="Campamento_VPPP_Login.html" style="color:white">Volver al menú</a></header><main>
 <h1>Consulta y asignación de camas</h1><p>Selecciona una habitación en el plano para consultar sus camas.</p>
+<p id="romlistDate" hidden></p>
 <div class="filters"><label>Empresa<select id="company"><option value="">Todas las empresas</option></select></label><label>Tipo de piso<select id="type"><option value="">Todos los tipos</option><option>WORKER</option><option>STAFF</option><option>MIXTO</option><option>MANAGER</option></select></label><label>Buscar módulo<input id="moduleSearch" type="search" placeholder="Ej. SD"></label><label>Buscar persona<input id="personSearch" type="search" placeholder="DNI o nombre" autocomplete="off"></label><label class="module-only"><input id="companyModulesOnly" type="checkbox" disabled>Solo módulos de la empresa seleccionada</label><label class="module-only"><input id="femaleOnly" type="checkbox">Habitaciones femeninas o vacías</label></div>
 <div class="legend"><span class="free">Libre</span><span class="partial">Ocupación parcial</span><span class="full">Completa</span><span class="other-company">No corresponde a la empresa filtrada</span></div>
 <section id="map" aria-label="Plano de habitaciones"></section><p id="msg" role="status"></p></main>
@@ -247,6 +248,19 @@ async function load(){
  byId('msg').textContent='Cargando el padrón…';
  try{
   data=await rpc('consultar_camas');
+  const romlistDate=byId('romlistDate');
+  const loadInfo=data.romlist_carga;
+  const loadDate=loadInfo?.fecha?new Date(loadInfo.fecha):null;
+  if(loadDate&&!Number.isNaN(loadDate.getTime())){
+   const label=loadInfo.solo_inicial?'Carga inicial del RomList':'Última carga del RomList';
+   const formatter=new Intl.DateTimeFormat('es-PE',{
+    dateStyle:'short',timeStyle:'short',timeZone:'America/Lima'
+   });
+   romlistDate.textContent=label+': '+formatter.format(loadDate);
+  }else{
+   romlistDate.textContent='Fecha de carga del RomList no disponible.';
+  }
+  romlistDate.hidden=false;
   for(const person of data.occupants){
    occupants.set(key(person.module,person.floor,person.room,person.bed),person);
   }
