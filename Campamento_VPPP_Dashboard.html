@@ -28,6 +28,13 @@ select{width:100%;background:white;border:1px solid #a4b8cc;border-radius:7px;pa
 .row a{color:#174e85;font-weight:700}.amount{text-align:right;font-variant-numeric:tabular-nums}
 .track{height:16px;background:#edf2f6;display:flex;overflow:hidden;border-radius:4px}
 .track span{height:100%}.rank{background:#396895}
+.detail-panel{margin-top:16px}
+.scroll{overflow:auto}
+table{width:100%;border-collapse:collapse;text-align:left;white-space:nowrap}
+th,td{padding:9px 12px;border-bottom:1px solid #d8e3ee}
+thead{background:#edf3fa}
+td.amount,th.amount{text-align:right}
+.note{color:#425a74;margin:0 0 12px}
 #estado{color:#425a74}
 @media(max-width:760px){.charts{grid-template-columns:1fr}}
 </style>
@@ -55,6 +62,19 @@ select{width:100%;background:white;border:1px solid #a4b8cc;border-radius:7px;pa
 <div id="ranking"></div>
 </section>
 </div>
+<section class="panel detail-panel">
+<h2>Ocupación por módulo y piso</h2>
+<div class="scroll"><table aria-label="Ocupación por módulo y piso">
+<thead><tr><th scope="col">Módulo</th><th scope="col">Piso</th><th scope="col">Tipo</th><th scope="col" class="amount">Ocupadas</th><th scope="col" class="amount">Libres con empresa</th><th scope="col" class="amount">Libres sin empresa</th><th scope="col" class="amount">Bloqueadas</th><th scope="col" class="amount">% ocupación</th></tr></thead>
+<tbody id="detallePisos"></tbody></table></div>
+</section>
+<section class="panel detail-panel">
+<h2>Disponibilidad de habitaciones por empresa</h2>
+<p class="note">Una habitación compartida cuenta para cada empresa que tenga una cama libre asignada en ella.</p>
+<div class="scroll"><table aria-label="Disponibilidad por empresa">
+<thead><tr><th scope="col">Empresa</th><th scope="col" class="amount">Habitaciones vacías</th><th scope="col" class="amount">Habitaciones parcialmente ocupadas</th><th scope="col" class="amount">Camas libres</th></tr></thead>
+<tbody id="detalleEmpresas"></tbody></table></div>
+</section>
 </div>
 </main>
 <script src="Campamento_VPPP_Conexion.js"></script>
@@ -88,7 +108,7 @@ function buildBeds(data){
     const company=floor.bedCompanies?.[room]?.[bed]??floor.assignments?.[room]??'';
     const occupied=occupants.has(bedKey(floor.module,floor.number,room,bed));
     const state=blocked.has(room)?'bloqueadas':occupied?'ocupadas':company?'libresEmpresa':'libresSinEmpresa';
-    beds.push({module:floor.module,type:floor.type,company,state});
+    beds.push({module:floor.module,floor:floor.number,room,type:floor.type,company,state});
    }
   }
  }
@@ -96,16 +116,27 @@ function buildBeds(data){
 }
 
 function summarize(beds,{modulo,tipo,empresa}){
- const totals=emptyTotals(), modules=new Map();
+ const totals=emptyTotals(),modules=new Map(),floors=new Map(),companies=new Map();
+ const occupiedRooms=new Set(beds.filter(bed=>bed.state==='ocupadas')
+  .map(bed=>bedKey(bed.module,bed.floor,bed.room)));
  for(const bed of beds){
   if((modulo&&bed.module!==modulo)||(tipo&&bed.type!==tipo)||(empresa&&bed.company!==empresa))continue;
   if(!modules.has(bed.module))modules.set(bed.module,{...emptyTotals(),name:bed.module,companies:new Set()});
   const module=modules.get(bed.module);
   totals[bed.state]++;
   module[bed.state]++;
+  const floorKey=bedKey(bed.module,bed.floor);
+  if(!floors.has(floorKey))floors.set(floorKey,{...emptyTotals(),module:bed.module,floor:bed.floor,type:bed.type});
+  floors.get(floorKey)[bed.state]++;
+  if(bed.state==='libresEmpresa'){
+   if(!companies.has(bed.company))companies.set(bed.company,{name:bed.company,empty:new Set(),partial:new Set(),beds:0});
+   const company=companies.get(bed.company),roomKey=bedKey(bed.module,bed.floor,bed.room);
+   company.beds++;
+   (occupiedRooms.has(roomKey)?company.partial:company.empty).add(roomKey);
+  }
   if(bed.company&&bed.state!=='bloqueadas')module.companies.add(bed.company);
  }
- return {totals,modules:[...modules.values()]};
+ return {totals,modules:[...modules.values()],floors:[...floors.values()],companies:[...companies.values()]};
 }
 
 function moduleLink(name,filters){
@@ -132,9 +163,34 @@ function chartRow(name,filters,segments,value,description){
  return row;
 }
 
+function renderTable(id,rows,columns,message,numericStart){
+ const body=get(id);
+ body.replaceChildren();
+ for(const values of rows){
+  const row=body.insertRow();
+  values.forEach((value,index)=>{
+   const cell=row.insertCell();
+   cell.textContent=typeof value==='number'?formatNumber.format(value):value;
+   if(index>=numericStart)cell.className='amount';
+  });
+ }
+ if(!rows.length){
+  const cell=body.insertRow().insertCell();
+  cell.colSpan=columns;
+  cell.textContent=message;
+ }
+}
+
 function render(beds){
  const filters=Object.fromEntries(['modulo','tipo','empresa'].map(id=>[id,get(id).value]));
- const {totals,modules}=summarize(beds,filters);
+ const {totals,modules,floors,companies}=summarize(beds,filters);
+ floors.sort((a,b)=>a.module.localeCompare(b.module,'es',{numeric:true})||a.floor-b.floor);
+ renderTable('detallePisos',floors.map(f=>[
+  f.module,String(f.floor),f.type,f.ocupadas,f.libresEmpresa,f.libresSinEmpresa,f.bloqueadas,percent(f)
+ ]),8,'No hay pisos para estos filtros.',3);
+ companies.sort((a,b)=>b.empty.size-a.empty.size||b.beds-a.beds||a.name.localeCompare(b.name,'es'));
+ renderTable('detalleEmpresas',companies.map(c=>[c.name,c.empty.size,c.partial.size,c.beds]),
+  4,'No hay camas libres asignadas a empresas para estos filtros.',1);
  const indicators=[
   ['Camas ocupadas',totals.ocupadas],['Camas libres',totals.libresEmpresa+totals.libresSinEmpresa],
   ['Libres con empresa',totals.libresEmpresa],['Libres sin empresa',totals.libresSinEmpresa],
