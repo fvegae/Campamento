@@ -20,7 +20,6 @@ h2{font-size:18px;margin:0 0 12px}
 select{width:100%;background:white;border:1px solid #a4b8cc;border-radius:7px;padding:8px;font:inherit;color:inherit}
 .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:12px;margin:16px 0}
 .card dt{color:#425a74}.card dd{margin:6px 0 0;font-size:28px;font-weight:750}
-.charts{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:16px}
 .legend{font-size:13px;color:#425a74;margin-bottom:12px}
 .swatch{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px}
 .ocupadas{background:#cf665b}.libresEmpresa{background:#448e75}.libresSinEmpresa{background:#5a91c5}
@@ -31,7 +30,13 @@ select{width:100%;background:white;border:1px solid #a4b8cc;border-radius:7px;pa
 .track button{padding:0;border:0;cursor:pointer;min-width:3px}
 .track button:focus-visible{outline:2px solid #102641;outline-offset:-2px}
 .bloqueadas{background:#9ba8b8}
-#ocupacion .track{height:24px}
+#ocupacion{display:flex;gap:12px;overflow-x:auto;padding:4px 4px 12px}
+#ocupacion .row{flex:1 0 64px;min-width:64px;margin:0;display:grid;grid-template-columns:1fr;grid-template-rows:auto 220px auto;gap:6px;text-align:center}
+#ocupacion .track{justify-self:center;width:min(100%,38px);height:100%;flex-direction:column-reverse}
+#ocupacion .track>*{flex-shrink:0;width:100%}
+#ocupacion .amount{grid-row:1;text-align:center}
+#ocupacion .track{grid-row:2}
+#ocupacion .row a{grid-row:3;font-size:13px}
 #verLibres,dialog button{font:inherit;color:#174e85;background:white;border:1px solid #a4b8cc;border-radius:5px;padding:4px 8px;cursor:pointer}
 #verLibres:disabled{opacity:.5;cursor:default}
 dialog{width:min(540px,92vw);color:#102641;border:1px solid #d8e3ee;border-radius:12px;padding:18px}
@@ -45,7 +50,14 @@ thead{background:#edf3fa}
 td.amount,th.amount{text-align:right}
 .note{color:#425a74;margin:0 0 12px}
 #estado{color:#425a74}
-@media(max-width:760px){.charts{grid-template-columns:1fr}}
+
+ .breakdown-row{display:grid;grid-template-columns:minmax(100px,24%) minmax(0,1fr);gap:12px;align-items:center;margin:8px 0}
+.breakdown-row .track{height:27px}
+.breakdown-row .track>*{display:grid;place-items:center;color:white;font-weight:700;overflow:hidden;flex-shrink:0}
+.breakdown-row .track button{min-width:0}
+.completa{background:#b84d45}.parcial{background:#41678a}.libre{background:#337e66}
+.tipo-grafico{font:inherit;color:#174e85;background:white;border:1px solid #a4b8cc;border-radius:5px;padding:4px 8px;cursor:pointer}
+.tipo-grafico[aria-pressed=true]{background:#174e85;color:white}
 </style>
 </head>
 <body>
@@ -60,17 +72,25 @@ td.amount,th.amount{text-align:right}
 <label>Empresa<select id="empresa"><option value="">Todas las empresas</option></select></label>
 </div>
 <dl id="indicadores" class="cards"></dl>
-<div class="charts">
 <section class="panel">
 <h2>Ocupación por módulo y piso</h2>
 <div class="legend"><span><i class="swatch ocupadas"></i>Ocupadas</span><button type="button" id="verLibres"><i class="swatch libresEmpresa"></i>Libres con empresa</button><span><i class="swatch libresSinEmpresa"></i>Libres sin empresa</span><span><i class="swatch bloqueadas"></i>Bloqueadas</span></div>
 <div id="ocupacion"></div>
 </section>
-<section class="panel">
+<section class="panel detail-panel">
+<h2>Habitaciones por tipo de piso</h2>
+<div class="legend"><span><i class="swatch completa"></i>Totalmente ocupadas</span><span><i class="swatch parcial"></i>Parcialmente ocupadas</span><span><i class="swatch libre"></i>Libres</span></div>
+<div id="habitacionesTipo"></div>
+</section>
+<section class="panel detail-panel">
+<h2 id="tituloCamasEmpresa">Camas por empresa</h2>
+<div class="legend"><span><i class="swatch completa"></i>Ocupadas</span><span><i class="swatch libre"></i>Libres</span></div>
+<div id="camasEmpresaTipo"></div>
+</section>
+<section class="panel detail-panel">
 <h2>Empresas por módulo</h2>
 <div id="ranking"></div>
 </section>
-</div>
 <section class="panel detail-panel">
 <h2>Disponibilidad de habitaciones por empresa</h2>
 <p class="note">Una habitación compartida cuenta para cada empresa que tenga una cama libre asignada en ella.</p>
@@ -91,6 +111,14 @@ td.amount,th.amount{text-align:right}
 <div class="scroll"><table>
 <thead><tr><th scope="col">Empresa</th><th scope="col" class="amount">Camas libres</th></tr></thead>
 <tbody id="filasLibres"></tbody></table></div>
+</dialog>
+<dialog id="detalleTipo" aria-labelledby="tituloDetalleTipo">
+<form method="dialog"><button>Cerrar</button></form>
+<h2 id="tituloDetalleTipo"></h2>
+<div class="scroll"><table>
+<thead><tr><th scope="col">Módulo</th><th scope="col">Piso</th><th scope="col" class="amount">Habitaciones</th></tr></thead>
+<tbody id="filasDetalleTipo"></tbody>
+</table></div>
 </dialog>
 </main>
 <script src="Campamento_VPPP_Conexion.js"></script>
@@ -190,7 +218,7 @@ function chartRow(name,filters,segments,value,description,floor){
    part.setAttribute('aria-label',part.title+' · '+name+' piso '+floor.floor);
    part.onclick=()=>showFreeCompanies(name+' · Piso '+floor.floor,floor.freeCompanies);
   }
-  part.style.width=(limit?amount/limit*100:0)+'%';
+  part.style[floor?'height':'width']=(limit?amount/limit*100:0)+'%';
   track.append(part);
  }
  const link=moduleLink(name,filters);
@@ -228,10 +256,95 @@ function showFreeCompanies(scope,companies){
  get('empresasLibres').showModal();
 }
 
+const roomStates=[
+ ['completa','Totalmente ocupadas'],['parcial','Parcialmente ocupadas'],['libre','Libres']
+];
+let selectedChartType='';
+
+function summarizeTypes(beds,filters){
+ const types=new Map(),rooms=new Map();
+ for(const bed of beds){
+  if(bed.state==='bloqueadas'||(filters.modulo&&bed.module!==filters.modulo)||
+     (filters.tipo&&bed.type!==filters.tipo))continue;
+  const key=bedKey(bed.module,bed.floor,bed.room);
+  if(!rooms.has(key))rooms.set(key,{...bed,total:0,occupied:0,matches:false});
+  const room=rooms.get(key);
+  room.total++;
+  if(bed.state==='ocupadas')room.occupied++;
+  if(filters.empresa&&bed.company!==filters.empresa)continue;
+  room.matches=true;
+  if(!types.has(bed.type))types.set(bed.type,{name:bed.type,rooms:[],companies:new Map()});
+  const companies=types.get(bed.type).companies;
+  const name=bed.company||'Sin empresa';
+  if(!companies.has(name))companies.set(name,{name,completa:0,libre:0});
+  companies.get(name)[bed.state==='ocupadas'?'completa':'libre']++;
+ }
+ for(const room of rooms.values()){
+  if(!room.matches)continue;
+  room.status=room.occupied===0?'libre':room.occupied===room.total?'completa':'parcial';
+  types.get(room.type).rooms.push(room);
+ }
+ return [...types.values()].sort((a,b)=>a.name.localeCompare(b.name,'es'));
+}
+
+function showRoomBreakdown(type,label,rooms){
+ const floors=new Map();
+ for(const room of rooms){
+  const key=bedKey(room.module,room.floor);
+  if(!floors.has(key))floors.set(key,{module:room.module,floor:room.floor,count:0});
+  floors.get(key).count++;
+ }
+ const rows=[...floors.values()].sort((a,b)=>a.module.localeCompare(b.module,'es',{numeric:true})||a.floor-b.floor);
+ get('tituloDetalleTipo').textContent=type+' · '+label;
+ renderTable('filasDetalleTipo',[...rows.map(r=>[r.module,String(r.floor),r.count]),['Total','',rooms.length]],
+  3,'No hay habitaciones.',2);
+ get('detalleTipo').showModal();
+}
+
+function breakdownRow(label,segments,maximum){
+ const row=node('div','','breakdown-row'),track=node('div','','track');
+ for(const [state,description,count,onClick] of segments){
+  if(!count)continue;
+  const part=node(onClick?'button':'span',formatNumber.format(count),state);
+  part.style.width=(count/maximum*100)+'%';
+  part.title=description+' · '+formatNumber.format(count);
+  part.setAttribute('aria-label',part.title);
+  if(onClick){part.type='button';part.onclick=onClick;}
+  track.append(part);
+ }
+ row.append(label,track);
+ return row;
+}
+
+function renderTypeCharts(types){
+ const selected=types.find(type=>type.name===selectedChartType)||types[0];
+ selectedChartType=selected?.name||'';
+ const maxRooms=Math.max(0,...types.map(type=>type.rooms.length));
+ get('habitacionesTipo').replaceChildren(...types.map(type=>{
+  const button=node('button',type.name,'tipo-grafico');
+  button.type='button';
+  button.setAttribute('aria-pressed',String(type===selected));
+  button.onclick=()=>{selectedChartType=type.name;renderTypeCharts(types);get('habitacionesTipo').querySelector('[aria-pressed="true"]').focus();};
+  return breakdownRow(button,roomStates.map(([state,label])=>{
+   const rooms=type.rooms.filter(room=>room.status===state);
+   return [state,label,rooms.length,()=>showRoomBreakdown(type.name,label,rooms)];
+  }),maxRooms);
+ }));
+ get('tituloCamasEmpresa').textContent=selected?'Camas por empresa · '+selected.name:'Camas por empresa';
+ const companies=selected?[...selected.companies.values()]:[];
+ companies.sort((a,b)=>b.libre-a.libre||a.name.localeCompare(b.name,'es'));
+ const maxBeds=Math.max(0,...companies.map(company=>company.completa+company.libre));
+ get('camasEmpresaTipo').replaceChildren(...companies.map(company=>breakdownRow(node('span',company.name),
+  [['completa','Ocupadas',company.completa],['libre','Libres',company.libre]],maxBeds)));
+ if(!types.length)get('habitacionesTipo').textContent='No hay habitaciones habilitadas para estos filtros.';
+ if(!companies.length)get('camasEmpresaTipo').textContent='No hay camas habilitadas para estos filtros.';
+}
+
 function render(beds){
  const filters=Object.fromEntries(['modulo','tipo','empresa'].map(id=>[id,get(id).value]));
+ renderTypeCharts(summarizeTypes(beds,filters));
  const {totals,modules,floors,companies,freeRooms}=summarize(beds,filters);
- floors.sort((a,b)=>a.module.localeCompare(b.module,'es',{numeric:true})||a.floor-b.floor);
+ floors.sort((a,b)=>(occupancy(a)??2)-(occupancy(b)??2)||a.module.localeCompare(b.module,'es',{numeric:true})||a.floor-b.floor);
  companies.sort((a,b)=>b.empty.size-a.empty.size||b.beds-a.beds||a.name.localeCompare(b.name,'es'));
  renderTable('detalleEmpresas',companies.map(c=>[c.name,c.empty.size,c.partial.size,c.beds]),
   4,'No hay camas libres asignadas a empresas para estos filtros.',1);
