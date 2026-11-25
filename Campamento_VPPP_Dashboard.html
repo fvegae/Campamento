@@ -59,6 +59,8 @@ td.amount,th.amount{text-align:right}
 .completa{background:#b84d45}.parcial{background:#41678a}.libre{background:#337e66}
 .tipo-grafico{font:inherit;color:#174e85;background:white;border:1px solid #a4b8cc;border-radius:5px;padding:4px 8px;cursor:pointer}
 .tipo-grafico[aria-pressed=true]{background:#174e85;color:white}
+.breakdown-row small{display:block;color:#425a74}
+#habitacionesLibresPiso .track{background:transparent}
 </style>
 </head>
 <body>
@@ -95,17 +97,21 @@ td.amount,th.amount{text-align:right}
 <section class="panel detail-panel">
 <h2>Disponibilidad de habitaciones por empresa</h2>
 <p class="note">Una habitación compartida cuenta para cada empresa que tenga una cama libre asignada en ella.</p>
-<div class="scroll"><table aria-label="Disponibilidad por empresa">
-<thead><tr><th scope="col">Empresa</th><th scope="col" class="amount">Habitaciones vacías</th><th scope="col" class="amount">Habitaciones parcialmente ocupadas</th><th scope="col" class="amount">Camas libres</th></tr></thead>
-<tbody id="detalleEmpresas"></tbody></table></div>
+<div class="legend"><span><i class="swatch libre"></i>Habitaciones vacías</span><span><i class="swatch parcial"></i>Habitaciones parcialmente ocupadas</span></div>
+<div id="disponibilidadEmpresas"></div>
 </section>
 <section class="panel detail-panel">
 <h2>Habitaciones totalmente libres</h2>
+<div id="habitacionesLibresPiso"></div>
+</section>
+</div>
+<dialog id="detallePisoLibre" aria-labelledby="tituloPisoLibre">
+<form method="dialog"><button>Cerrar</button></form>
+<h2 id="tituloPisoLibre"></h2>
 <div class="scroll"><table aria-label="Habitaciones totalmente libres">
 <thead><tr><th scope="col">Módulo</th><th scope="col">Piso</th><th scope="col">Habitación</th><th scope="col" class="amount">Camas libres según filtros</th></tr></thead>
 <tbody id="detalleHabitacionesLibres"></tbody></table></div>
-</section>
-</div>
+</dialog>
 <dialog id="empresasLibres" aria-labelledby="tituloLibres">
 <form method="dialog"><button>Cerrar</button></form>
 <h2 id="tituloLibres"></h2>
@@ -303,9 +309,8 @@ function showFloorBreakdown(title,items,unit){
  get('detalleTipo').showModal();
 }
 
-function breakdownRow(label,segments){
+function breakdownRow(label,segments,total=segments.reduce((sum,[,,count])=>sum+count,0)){
  const row=node('div','','breakdown-row'),track=node('div','','track');
- const total=segments.reduce((sum,[,,count])=>sum+count,0);
  for(const [state,description,count,onClick] of segments){
   if(!count)continue;
   const part=node(onClick?'button':'span',formatNumber.format(count),state);
@@ -344,18 +349,52 @@ function renderTypeCharts(types){
  if(!companies.length)get('camasEmpresaTipo').textContent='No hay camas habilitadas para estos filtros.';
 }
 
+function renderAvailabilityCharts(companies,freeRooms){
+ const companyChart=get('disponibilidadEmpresas');
+ companyChart.replaceChildren(...companies.map(company=>{
+  const label=node('span',company.name);
+  label.append(node('small',formatNumber.format(company.beds)+' camas libres'));
+  return breakdownRow(label,[
+   ['libre','Habitaciones vacías',company.empty.size],
+   ['parcial','Habitaciones parcialmente ocupadas',company.partial.size]
+  ]);
+ }));
+ if(!companies.length)companyChart.textContent='No hay camas libres asignadas a empresas para estos filtros.';
+
+ const floors=new Map();
+ for(const room of freeRooms){
+  const key=bedKey(room.module,room.floor);
+  if(!floors.has(key))floors.set(key,{module:room.module,floor:room.floor,rooms:[],beds:0});
+  const floor=floors.get(key);
+  floor.rooms.push(room);
+  floor.beds+=room.beds;
+ }
+ const rows=[...floors.values()].sort((a,b)=>a.module.localeCompare(b.module,'es',{numeric:true})||a.floor-b.floor);
+ const maximum=Math.max(0,...rows.map(row=>row.rooms.length));
+ const floorChart=get('habitacionesLibresPiso');
+ floorChart.replaceChildren(...rows.map(floor=>{
+  const name=floor.module+' · Piso '+floor.floor;
+  const label=node('span',name);
+  label.append(node('small',formatNumber.format(floor.beds)+' camas libres'));
+  return breakdownRow(label,[['libre','Habitaciones totalmente libres',floor.rooms.length,()=>{
+   get('tituloPisoLibre').textContent='Habitaciones totalmente libres · '+name;
+   const rooms=[...floor.rooms].sort((a,b)=>a.room-b.room);
+   renderTable('detalleHabitacionesLibres',rooms.map(room=>[
+    room.module,String(room.floor),String(room.room).padStart(2,'0'),room.beds
+   ]),4,'No hay habitaciones totalmente libres para estos filtros.',3);
+   get('detallePisoLibre').showModal();
+  }]],maximum);
+ }));
+ if(!rows.length)floorChart.textContent='No hay habitaciones totalmente libres para estos filtros.';
+}
+
 function render(beds){
  const filters=Object.fromEntries(['modulo','tipo','empresa'].map(id=>[id,get(id).value]));
  renderTypeCharts(summarizeTypes(beds,filters));
  const {totals,modules,floors,companies,freeRooms}=summarize(beds,filters);
  floors.sort((a,b)=>(occupancy(a)??2)-(occupancy(b)??2)||a.module.localeCompare(b.module,'es',{numeric:true})||a.floor-b.floor);
  companies.sort((a,b)=>b.empty.size-a.empty.size||b.beds-a.beds||a.name.localeCompare(b.name,'es'));
- renderTable('detalleEmpresas',companies.map(c=>[c.name,c.empty.size,c.partial.size,c.beds]),
-  4,'No hay camas libres asignadas a empresas para estos filtros.',1);
- freeRooms.sort((a,b)=>a.module.localeCompare(b.module,'es',{numeric:true})||a.floor-b.floor||a.room-b.room);
- renderTable('detalleHabitacionesLibres',freeRooms.map(r=>[
-  r.module,String(r.floor),String(r.room).padStart(2,'0'),r.beds
- ]),4,'No hay habitaciones totalmente libres para estos filtros.',3);
+ renderAvailabilityCharts(companies,freeRooms);
  const indicators=[
   ['Camas ocupadas',totals.ocupadas],['Camas libres',totals.libresEmpresa+totals.libresSinEmpresa],
   ['Libres con empresa',totals.libresEmpresa],['Libres sin empresa',totals.libresSinEmpresa],
