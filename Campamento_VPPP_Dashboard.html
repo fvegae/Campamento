@@ -31,12 +31,13 @@ select{width:100%;background:white;border:1px solid #a4b8cc;border-radius:7px;pa
 .track button:focus-visible{outline:2px solid #102641;outline-offset:-2px}
 .bloqueadas{background:#9ba8b8}
 #ocupacion{display:flex;gap:12px;overflow-x:auto;padding:4px 4px 12px}
-#ocupacion .row{flex:1 0 64px;min-width:64px;margin:0;display:grid;grid-template-columns:1fr;grid-template-rows:auto 220px auto;gap:6px;text-align:center}
+#ocupacion .row{flex:1 0 auto;min-width:64px;margin:0;display:grid;grid-template-columns:1fr;grid-template-rows:auto 220px auto;gap:6px;text-align:center}
 #ocupacion .track{justify-self:center;width:min(100%,38px);height:100%;flex-direction:column-reverse}
 #ocupacion .track>*{flex-shrink:0;width:100%}
 #ocupacion .amount{grid-row:1;text-align:center}
 #ocupacion .track{grid-row:2}
 #ocupacion .row a{grid-row:3;font-size:13px}
+#ocupacion .row a span{display:block;white-space:nowrap}
 #verLibres,dialog button{font:inherit;color:#174e85;background:white;border:1px solid #a4b8cc;border-radius:5px;padding:4px 8px;cursor:pointer}
 #verLibres:disabled{opacity:.5;cursor:default}
 dialog{width:min(540px,92vw);color:#102641;border:1px solid #d8e3ee;border-radius:12px;padding:18px}
@@ -116,7 +117,7 @@ td.amount,th.amount{text-align:right}
 <form method="dialog"><button>Cerrar</button></form>
 <h2 id="tituloDetalleTipo"></h2>
 <div class="scroll"><table>
-<thead><tr><th scope="col">Módulo</th><th scope="col">Piso</th><th scope="col" class="amount">Habitaciones</th></tr></thead>
+<thead><tr><th scope="col">Módulo</th><th scope="col">Piso</th><th scope="col" class="amount" id="unidadDetalleTipo">Habitaciones</th></tr></thead>
 <tbody id="filasDetalleTipo"></tbody>
 </table></div>
 </dialog>
@@ -223,7 +224,7 @@ function chartRow(name,filters,segments,value,description,floor){
  }
  const link=moduleLink(name,filters);
  if(floor){
-  link.textContent=name+' · Piso '+floor.floor;
+  link.replaceChildren(node('span',name),node('span','Piso '+floor.floor));
   link.setAttribute('aria-label','Ver plano del módulo '+name+' · Piso '+floor.floor);
   link.href+='&piso='+encodeURIComponent(floor.floor);
  }
@@ -276,8 +277,8 @@ function summarizeTypes(beds,filters){
   if(!types.has(bed.type))types.set(bed.type,{name:bed.type,rooms:[],companies:new Map()});
   const companies=types.get(bed.type).companies;
   const name=bed.company||'Sin empresa';
-  if(!companies.has(name))companies.set(name,{name,completa:0,libre:0});
-  companies.get(name)[bed.state==='ocupadas'?'completa':'libre']++;
+  if(!companies.has(name))companies.set(name,{name,completa:[],libre:[]});
+  companies.get(name)[bed.state==='ocupadas'?'completa':'libre'].push(bed);
  }
  for(const room of rooms.values()){
   if(!room.matches)continue;
@@ -287,17 +288,18 @@ function summarizeTypes(beds,filters){
  return [...types.values()].sort((a,b)=>a.name.localeCompare(b.name,'es'));
 }
 
-function showRoomBreakdown(type,label,rooms){
+function showFloorBreakdown(title,items,unit){
  const floors=new Map();
- for(const room of rooms){
-  const key=bedKey(room.module,room.floor);
-  if(!floors.has(key))floors.set(key,{module:room.module,floor:room.floor,count:0});
+ for(const item of items){
+  const key=bedKey(item.module,item.floor);
+  if(!floors.has(key))floors.set(key,{module:item.module,floor:item.floor,count:0});
   floors.get(key).count++;
  }
  const rows=[...floors.values()].sort((a,b)=>a.module.localeCompare(b.module,'es',{numeric:true})||a.floor-b.floor);
- get('tituloDetalleTipo').textContent=type+' · '+label;
- renderTable('filasDetalleTipo',[...rows.map(r=>[r.module,String(r.floor),r.count]),['Total','',rooms.length]],
-  3,'No hay habitaciones.',2);
+ get('tituloDetalleTipo').textContent=title;
+ get('unidadDetalleTipo').textContent=unit;
+ renderTable('filasDetalleTipo',[...rows.map(r=>[r.module,String(r.floor),r.count]),['Total','',items.length]],
+  3,'No hay registros.',2);
  get('detalleTipo').showModal();
 }
 
@@ -327,14 +329,17 @@ function renderTypeCharts(types){
   button.onclick=()=>{selectedChartType=type.name;renderTypeCharts(types);get('habitacionesTipo').querySelector('[aria-pressed="true"]').focus();};
   return breakdownRow(button,roomStates.map(([state,label])=>{
    const rooms=type.rooms.filter(room=>room.status===state);
-   return [state,label,rooms.length,()=>showRoomBreakdown(type.name,label,rooms)];
+   return [state,label,rooms.length,()=>showFloorBreakdown(type.name+' · '+label,rooms,'Habitaciones')];
   }));
  }));
  get('tituloCamasEmpresa').textContent=selected?'Camas por empresa · '+selected.name:'Camas por empresa';
  const companies=selected?[...selected.companies.values()]:[];
- companies.sort((a,b)=>b.libre-a.libre||a.name.localeCompare(b.name,'es'));
+ companies.sort((a,b)=>b.libre.length-a.libre.length||a.name.localeCompare(b.name,'es'));
  get('camasEmpresaTipo').replaceChildren(...companies.map(company=>breakdownRow(node('span',company.name),
-  [['completa','Ocupadas',company.completa],['libre','Libres',company.libre]])));
+  [['completa','Ocupadas'],['libre','Libres']].map(([state,label])=>{
+   const beds=company[state];
+   return [state,label,beds.length,()=>showFloorBreakdown(selected.name+' · '+company.name+' · Camas '+label.toLowerCase(),beds,'Camas')];
+  }))));
  if(!types.length)get('habitacionesTipo').textContent='No hay habitaciones habilitadas para estos filtros.';
  if(!companies.length)get('camasEmpresaTipo').textContent='No hay camas habilitadas para estos filtros.';
 }
