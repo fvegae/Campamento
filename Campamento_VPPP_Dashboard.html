@@ -301,12 +301,13 @@ function showRoomBreakdown(type,label,rooms){
  get('detalleTipo').showModal();
 }
 
-function breakdownRow(label,segments,maximum){
+function breakdownRow(label,segments){
  const row=node('div','','breakdown-row'),track=node('div','','track');
+ const total=segments.reduce((sum,[,,count])=>sum+count,0);
  for(const [state,description,count,onClick] of segments){
   if(!count)continue;
   const part=node(onClick?'button':'span',formatNumber.format(count),state);
-  part.style.width=(count/maximum*100)+'%';
+  part.style.width=(count/total*100)+'%';
   part.title=description+' · '+formatNumber.format(count);
   part.setAttribute('aria-label',part.title);
   if(onClick){part.type='button';part.onclick=onClick;}
@@ -319,7 +320,6 @@ function breakdownRow(label,segments,maximum){
 function renderTypeCharts(types){
  const selected=types.find(type=>type.name===selectedChartType)||types[0];
  selectedChartType=selected?.name||'';
- const maxRooms=Math.max(0,...types.map(type=>type.rooms.length));
  get('habitacionesTipo').replaceChildren(...types.map(type=>{
   const button=node('button',type.name,'tipo-grafico');
   button.type='button';
@@ -328,14 +328,13 @@ function renderTypeCharts(types){
   return breakdownRow(button,roomStates.map(([state,label])=>{
    const rooms=type.rooms.filter(room=>room.status===state);
    return [state,label,rooms.length,()=>showRoomBreakdown(type.name,label,rooms)];
-  }),maxRooms);
+  }));
  }));
  get('tituloCamasEmpresa').textContent=selected?'Camas por empresa · '+selected.name:'Camas por empresa';
  const companies=selected?[...selected.companies.values()]:[];
  companies.sort((a,b)=>b.libre-a.libre||a.name.localeCompare(b.name,'es'));
- const maxBeds=Math.max(0,...companies.map(company=>company.completa+company.libre));
  get('camasEmpresaTipo').replaceChildren(...companies.map(company=>breakdownRow(node('span',company.name),
-  [['completa','Ocupadas',company.completa],['libre','Libres',company.libre]],maxBeds)));
+  [['completa','Ocupadas',company.completa],['libre','Libres',company.libre]])));
  if(!types.length)get('habitacionesTipo').textContent='No hay habitaciones habilitadas para estos filtros.';
  if(!companies.length)get('camasEmpresaTipo').textContent='No hay camas habilitadas para estos filtros.';
 }
