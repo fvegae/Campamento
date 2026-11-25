@@ -105,6 +105,14 @@ td.amount,th.amount{text-align:right}
 <div id="habitacionesLibresPiso"></div>
 </section>
 </div>
+<dialog id="detalleCamasEmpresa" aria-labelledby="tituloDetalleCamasEmpresa">
+<form method="dialog"><button>Cerrar</button></form>
+<h2 id="tituloDetalleCamasEmpresa"></h2>
+<div class="scroll"><table>
+<thead><tr><th scope="col">Módulo</th><th scope="col">Piso</th><th scope="col">Habitación</th><th scope="col" class="amount">Cama</th></tr></thead>
+<tbody id="filasCamasEmpresa"></tbody>
+</table></div>
+</dialog>
 <dialog id="detallePisoLibre" aria-labelledby="tituloPisoLibre">
 <form method="dialog"><button>Cerrar</button></form>
 <h2 id="tituloPisoLibre"></h2>
@@ -159,7 +167,7 @@ function buildBeds(data){
     const company=floor.bedCompanies?.[room]?.[bed]??floor.assignments?.[room]??'';
     const occupied=occupants.has(bedKey(floor.module,floor.number,room,bed));
     const state=blocked.has(room)?'bloqueadas':occupied?'ocupadas':company?'libresEmpresa':'libresSinEmpresa';
-    beds.push({module:floor.module,floor:floor.number,room,type:floor.type,company,state});
+    beds.push({module:floor.module,floor:floor.number,room,bed,type:floor.type,company,state});
    }
   }
  }
@@ -189,10 +197,12 @@ function summarize(beds,{modulo,tipo,empresa}){
   if(bed.state==='libresEmpresa'){
    const free=floors.get(floorKey).freeCompanies;
    free.set(bed.company,(free.get(bed.company)||0)+1);
-   if(!companies.has(bed.company))companies.set(bed.company,{name:bed.company,empty:new Set(),partial:new Set(),beds:0});
+   if(!companies.has(bed.company))companies.set(bed.company,{name:bed.company,empty:new Set(),partial:new Set(),beds:0,emptyBeds:[],partialBeds:[]});
    const company=companies.get(bed.company);
    company.beds++;
-   (occupiedRooms.has(roomKey)?company.partial:company.empty).add(roomKey);
+   const category=occupiedRooms.has(roomKey)?'partial':'empty';
+   company[category].add(roomKey);
+   company[category+'Beds'].push(bed);
   }
   if(bed.company&&bed.state!=='bloqueadas')module.companies.add(bed.company);
  }
@@ -349,15 +359,27 @@ function renderTypeCharts(types){
  if(!companies.length)get('camasEmpresaTipo').textContent='No hay camas habilitadas para estos filtros.';
 }
 
+function showCompanyBeds(company,category,label){
+ const beds=[...company[category+'Beds']].sort((a,b)=>
+  a.module.localeCompare(b.module,'es',{numeric:true})||a.floor-b.floor||a.room-b.room||a.bed-b.bed);
+ get('tituloDetalleCamasEmpresa').textContent=company.name+' · '+label+' · '+formatNumber.format(beds.length)+' camas libres';
+ renderTable('filasCamasEmpresa',beds.map(bed=>[
+  bed.module,String(bed.floor),String(bed.room).padStart(2,'0'),bed.bed
+ ]),4,'No hay camas libres para estos filtros.',3);
+ get('detalleCamasEmpresa').showModal();
+}
+
 function renderAvailabilityCharts(companies,freeRooms){
  const companyChart=get('disponibilidadEmpresas');
  companyChart.replaceChildren(...companies.map(company=>{
   const label=node('span',company.name);
   label.append(node('small',formatNumber.format(company.beds)+' camas libres'));
   return breakdownRow(label,[
-   ['libre','Habitaciones vacías',company.empty.size],
-   ['parcial','Habitaciones parcialmente ocupadas',company.partial.size]
-  ]);
+   ['libre','Habitaciones vacías','empty'],
+   ['parcial','Habitaciones parcialmente ocupadas','partial']
+  ].map(([state,description,category])=>[
+   state,description,company[category].size,()=>showCompanyBeds(company,category,description)
+  ]));
  }));
  if(!companies.length)companyChart.textContent='No hay camas libres asignadas a empresas para estos filtros.';
 
@@ -369,7 +391,7 @@ function renderAvailabilityCharts(companies,freeRooms){
   floor.rooms.push(room);
   floor.beds+=room.beds;
  }
- const rows=[...floors.values()].sort((a,b)=>a.module.localeCompare(b.module,'es',{numeric:true})||a.floor-b.floor);
+ const rows=[...floors.values()].sort((a,b)=>b.rooms.length-a.rooms.length||a.module.localeCompare(b.module,'es',{numeric:true})||a.floor-b.floor);
  const maximum=Math.max(0,...rows.map(row=>row.rooms.length));
  const floorChart=get('habitacionesLibresPiso');
  floorChart.replaceChildren(...rows.map(floor=>{
