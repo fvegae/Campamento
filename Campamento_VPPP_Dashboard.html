@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dashboard de Campamento VPPP</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font:15px system-ui,sans-serif;background:#f1f5f9;color:#102641}
+header{background:#102641;color:white;padding:16px 24px;display:flex;justify-content:space-between;gap:16px}
+header a{color:white}
+main{max-width:1440px;margin:auto;padding:clamp(16px,3vw,42px)}
+.intro,.filters,.legend{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.intro{justify-content:space-between;margin-bottom:18px}
+h1{font-size:clamp(24px,4vw,38px);margin:0}
+h2{font-size:18px;margin:0 0 12px}
+#fecha{font-weight:700;margin:0}
+.panel,.card{background:white;border:1px solid #d8e3ee;border-radius:12px;padding:16px}
+.filters label{display:grid;gap:5px;font-weight:650;flex:1;min-width:min(180px,100%)}
+select{width:100%;background:white;border:1px solid #a4b8cc;border-radius:7px;padding:8px;font:inherit;color:inherit}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:12px;margin:16px 0}
+.card dt{color:#425a74}.card dd{margin:6px 0 0;font-size:28px;font-weight:750}
+.charts{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:16px}
+.legend{font-size:13px;color:#425a74;margin-bottom:12px}
+.swatch{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px}
+.ocupadas{background:#cf665b}.libresEmpresa{background:#448e75}.libresSinEmpresa{background:#5a91c5}
+.row{display:grid;grid-template-columns:minmax(48px,auto) minmax(0,1fr) 60px;align-items:center;gap:10px;margin:8px 0}
+.row a{color:#174e85;font-weight:700}.amount{text-align:right;font-variant-numeric:tabular-nums}
+.track{height:16px;background:#edf2f6;display:flex;overflow:hidden;border-radius:4px}
+.track span{height:100%}.rank{background:#396895}
+#estado{color:#425a74}
+@media(max-width:760px){.charts{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header><strong>Campamento VPPP</strong><a href="Campamento_VPPP_Login.html">Volver al menú</a></header>
+<main>
+<div class="intro"><h1>Dashboard de Campamento</h1><p id="fecha"></p></div>
+<p id="estado" role="status">Cargando ocupación…</p>
+<div id="dashboard" hidden>
+<div class="panel filters">
+<label>Módulo<select id="modulo"><option value="">Todos los módulos</option></select></label>
+<label>Tipo de piso<select id="tipo"><option value="">Todos los tipos</option></select></label>
+<label>Empresa<select id="empresa"><option value="">Todas las empresas</option></select></label>
+</div>
+<dl id="indicadores" class="cards"></dl>
+<div class="charts">
+<section class="panel">
+<h2>Ocupación por módulo</h2>
+<div class="legend"><span><i class="swatch ocupadas"></i>Ocupadas</span><span><i class="swatch libresEmpresa"></i>Libres con empresa</span><span><i class="swatch libresSinEmpresa"></i>Libres sin empresa</span></div>
+<div id="ocupacion"></div>
+</section>
+<section class="panel">
+<h2>Empresas por módulo</h2>
+<div id="ranking"></div>
+</section>
+</div>
+</div>
+</main>
+<script src="Campamento_VPPP_Conexion.js"></script>
+<script>
+const get=id=>document.getElementById(id);
+const formatNumber=new Intl.NumberFormat('es-PE');
+const formatPercent=new Intl.NumberFormat('es-PE',{style:'percent',maximumFractionDigits:1});
+const bedKey=(module,floor,room,bed)=>JSON.stringify([module,floor,room,bed]);
+const states=[
+ ['ocupadas','Ocupadas'],['libresEmpresa','Libres con empresa'],['libresSinEmpresa','Libres sin empresa']
+];
+const emptyTotals=()=>({ocupadas:0,libresEmpresa:0,libresSinEmpresa:0,bloqueadas:0});
+const enabled=t=>t.ocupadas+t.libresEmpresa+t.libresSinEmpresa;
+const occupancy=t=>enabled(t)?t.ocupadas/enabled(t):null;
+const percent=t=>occupancy(t)===null?'—':formatPercent.format(occupancy(t));
+
+function node(tag,text='',className=''){
+ const element=document.createElement(tag);
+ element.textContent=text;
+ element.className=className;
+ return element;
+}
+
+function buildBeds(data){
+ const occupants=new Set(data.occupants.map(p=>bedKey(p.module,p.floor,p.room,p.bed)));
+ const beds=[];
+ for(const floor of data.floors){
+  const blocked=new Set(floor.blocked);
+  for(let room=1;room<=floor.rooms;room++){
+   for(let bed=1;bed<=floor.beds;bed++){
+    const company=floor.bedCompanies?.[room]?.[bed]??floor.assignments?.[room]??'';
+    const occupied=occupants.has(bedKey(floor.module,floor.number,room,bed));
+    const state=blocked.has(room)?'bloqueadas':occupied?'ocupadas':company?'libresEmpresa':'libresSinEmpresa';
+    beds.push({module:floor.module,type:floor.type,company,state});
+   }
+  }
+ }
+ return beds;
+}
+
+function summarize(beds,{modulo,tipo,empresa}){
+ const totals=emptyTotals(), modules=new Map();
+ for(const bed of beds){
+  if((modulo&&bed.module!==modulo)||(tipo&&bed.type!==tipo)||(empresa&&bed.company!==empresa))continue;
+  if(!modules.has(bed.module))modules.set(bed.module,{...emptyTotals(),name:bed.module,companies:new Set()});
+  const module=modules.get(bed.module);
+  totals[bed.state]++;
+  module[bed.state]++;
+  if(bed.company&&bed.state!=='bloqueadas')module.companies.add(bed.company);
+ }
+ return {totals,modules:[...modules.values()]};
+}
+
+function moduleLink(name,filters){
+ const link=node('a',name);
+ const query=new URLSearchParams({modulo:name});
+ if(filters.tipo)query.set('tipo',filters.tipo);
+ if(filters.empresa)query.set('empresa',filters.empresa);
+ link.href='Campamento_VPPP_Consulta_Camas.html?'+query;
+ link.setAttribute('aria-label','Ver plano del módulo '+name);
+ return link;
+}
+
+function chartRow(name,filters,segments,value,description){
+ const row=node('div','','row'), track=node('div','','track');
+ track.setAttribute('role','img');
+ track.setAttribute('aria-label',description);
+ track.title=description;
+ for(const [className,amount,limit] of segments){
+  const part=node('span','',className);
+  part.style.width=(limit?amount/limit*100:0)+'%';
+  track.append(part);
+ }
+ row.append(moduleLink(name,filters),track,node('span',value,'amount'));
+ return row;
+}
+
+function render(beds){
+ const filters=Object.fromEntries(['modulo','tipo','empresa'].map(id=>[id,get(id).value]));
+ const {totals,modules}=summarize(beds,filters);
+ const indicators=[
+  ['Camas ocupadas',totals.ocupadas],['Camas libres',totals.libresEmpresa+totals.libresSinEmpresa],
+  ['Libres con empresa',totals.libresEmpresa],['Libres sin empresa',totals.libresSinEmpresa],
+  ['Camas bloqueadas',totals.bloqueadas],['% de ocupación',percent(totals)]
+ ];
+ get('indicadores').replaceChildren(...indicators.map(([label,value])=>{
+  const card=node('div','','card');
+  card.append(node('dt',label),node('dd',typeof value==='number'?formatNumber.format(value):value));
+  return card;
+ }));
+ const occupancies=modules.filter(m=>enabled(m)>0)
+  .sort((a,b)=>occupancy(b)-occupancy(a)||a.name.localeCompare(b.name,'es',{numeric:true}));
+ const capacity=Math.max(0,...occupancies.map(enabled));
+ get('ocupacion').replaceChildren(...occupancies.map(m=>chartRow(m.name,filters,
+  states.map(([state])=>[state,m[state],capacity]),percent(m),
+  states.map(([state,label])=>label+' '+formatNumber.format(m[state])).join(' · '))));
+ const ranking=modules.filter(m=>m.companies.size>0)
+  .sort((a,b)=>b.companies.size-a.companies.size||a.name.localeCompare(b.name,'es',{numeric:true}));
+ const maximum=ranking[0]?.companies.size||0;
+ get('ranking').replaceChildren(...ranking.map(m=>chartRow(m.name,filters,
+  [['rank',m.companies.size,maximum]],formatNumber.format(m.companies.size),
+  'Empresas distintas '+m.companies.size+' · '+[...m.companies].sort().join(', '))));
+ if(!occupancies.length)get('ocupacion').textContent='No hay camas habilitadas para estos filtros.';
+ if(!ranking.length)get('ranking').textContent='No hay empresas asignadas a camas habilitadas para estos filtros.';
+}
+
+async function load(){
+ if(!currentSession()){endSession();return;}
+ watchSession();
+ try{
+  const data=await rpc('consultar_camas');
+  const beds=buildBeds(data);
+  const info=data.romlist_carga;
+  const date=info?.fecha?new Date(info.fecha):null;
+  get('fecha').textContent=date&&!Number.isNaN(date.getTime())
+   ?(info.solo_inicial?'Carga inicial del RomList · ':'Última carga del RomList · ')+
+    new Intl.DateTimeFormat('es-PE',{dateStyle:'short',timeStyle:'short',timeZone:'America/Lima'}).format(date)
+   :'Fecha de carga del RomList no disponible';
+  const values={modulo:data.floors.map(f=>f.module),tipo:data.floors.map(f=>f.type),empresa:data.companies};
+  for(const [id,options] of Object.entries(values)){
+   for(const value of [...new Set(options)].sort((a,b)=>a.localeCompare(b,'es',{numeric:true}))){
+    get(id).add(new Option(value,value));
+   }
+   get(id).onchange=()=>render(beds);
+  }
+  render(beds);
+  get('dashboard').hidden=false;
+  get('estado').hidden=true;
+ }catch(error){get('estado').textContent='No se pudo cargar el dashboard. '+error.message;}
+}
+load();
+</script>
+</body>
+</html>

@@ -27,6 +27,7 @@
 const byId = id => document.getElementById(id);
 let data;
 let saving = false;
+let exactModule=false;
 const key = (module, floor, room, bed) => JSON.stringify([module,floor,room,bed]);
 const occupants = new Map();
 
@@ -73,7 +74,7 @@ function render(){
  map.replaceChildren();
  for(const floor of data.floors){
   if(type&&floor.type!==type)continue;
-  if(!floor.module.toUpperCase().startsWith(moduleQuery))continue;
+  if(exactModule?floor.module.toUpperCase()!==moduleQuery:!floor.module.toUpperCase().startsWith(moduleQuery))continue;
   const blockedRooms=new Set(floor.blocked);
   const eligibleRooms=Array.from({length:floor.rooms},(_,index)=>index+1)
    .filter(room=>!blockedRooms.has(room))
@@ -266,12 +267,22 @@ async function load(){
    occupants.set(key(person.module,person.floor,person.room,person.bed),person);
   }
   for(const company of data.companies)byId('company').add(new Option(company,company));
+  const filters=new URLSearchParams(location.search);
+  const module=filters.get('modulo');
+  if(data.floors.some(floor=>floor.module===module)){
+   byId('moduleSearch').value=module;
+   exactModule=true;
+  }
+  for(const [id,param] of [['company','empresa'],['type','tipo']]){
+   const select=byId(id),value=filters.get(param);
+   if(Array.from(select.options).some(option=>option.value===value))select.value=value;
+  }
   render();
   byId('company').onchange=render;
   byId('type').onchange=render;
   byId('femaleOnly').onchange=render;
   byId('companyModulesOnly').onchange=render;
-  byId('moduleSearch').addEventListener('input',render);
+  byId('moduleSearch').addEventListener('input',()=>{exactModule=false;render();});
   byId('personSearch').addEventListener('input',render);
  }catch(error){byId('msg').textContent=error.message;}
 }
