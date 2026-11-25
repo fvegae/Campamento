@@ -362,9 +362,8 @@ function render(beds){
   card.append(node('dt',label),node('dd',typeof value==='number'?formatNumber.format(value):value));
   return card;
  }));
- const capacity=Math.max(0,...floors.map(f=>enabled(f)+f.bloqueadas));
  get('ocupacion').replaceChildren(...floors.map(f=>chartRow(f.module,filters,
-  states.map(([state])=>[state,f[state],capacity]),percent(f),
+  states.map(([state])=>[state,f[state],enabled(f)+f.bloqueadas]),percent(f),
   states.map(([state,label])=>label+' '+formatNumber.format(f[state])).join(' · '),f)));
  const allFree=new Map(companies.map(c=>[c.name,c.beds]));
  get('verLibres').disabled=!allFree.size;
