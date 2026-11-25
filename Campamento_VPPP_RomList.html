@@ -25,7 +25,7 @@ function validate(rows,initial,occupants,documents){
  const inside=rows.filter(row=>Object.hasOwn(floors,row.floor));
  const incoming=new Set(inside.map(row=>row.dni));
  const present=new Set(documents);
- const roomSexes=new Map();
+ const roomSexes=new Map(),retainedBeds=new Set();
  for(const row of inside){
   if(row.sex!=='F'&&row.sex!=='M')continue;
   const key=roomKey(row.floor,row.room);
@@ -34,7 +34,9 @@ function validate(rows,initial,occupants,documents){
  }
  for(const person of occupants){
   if(present.has(person.document)&&!incoming.has(person.document)){
-   roomSexes.get(roomKey(person.module+person.floor,person.room))?.add(person.sex??'');
+   const floor=person.module+person.floor;
+   retainedBeds.add(code({floor,room:person.room,bed:person.bed}));
+   roomSexes.get(roomKey(floor,person.room))?.add(person.sex??'');
   }
  }
  const documentCounts=new Map(),beds=new Map();
@@ -57,6 +59,7 @@ function validate(rows,initial,occupants,documents){
    issues.push('Habitación con sexos distintos o con un huésped sin sexo registrado');
   if(documentCounts.get(row.dni)>1)issues.push('DNI duplicado');
   if(beds.get(code(row))>1)issues.push('Cama duplicada');
+  if(retainedBeds.has(code(row)))issues.push('Cama ocupada por un huésped que se conserva en el padrón');
   return {...row,expected,group:issues.length?'warn':'ok',result:issues.join(' · ')||(expected.toUpperCase()===row.company.toUpperCase()?'Conforme':'Se asignará la Empresa Dueña del Contrato')};
  });
 }
