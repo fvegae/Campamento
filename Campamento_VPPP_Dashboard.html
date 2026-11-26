@@ -81,9 +81,9 @@ td.amount,th.amount{text-align:right}
 <div id="ocupacion"></div>
 </section>
 <section class="panel detail-panel">
-<h2>Habitaciones por tipo de piso</h2>
-<div class="legend"><span><i class="swatch completa"></i>Totalmente ocupadas</span><span><i class="swatch parcial"></i>Parcialmente ocupadas</span><span><i class="swatch libre"></i>Libres</span></div>
-<div id="habitacionesTipo"></div>
+<h2>Camas por tipo de piso</h2>
+<div class="legend"><span><i class="swatch completa"></i>Camas ocupadas</span><span><i class="swatch parcial"></i>Camas asignadas sin personal</span><span><i class="swatch libre"></i>Camas libres sin empresa</span></div>
+<div id="camasTipo"></div>
 </section>
 <section class="panel detail-panel">
 <h2 id="tituloCamasEmpresa">Camas por empresa</h2>
@@ -131,7 +131,7 @@ td.amount,th.amount{text-align:right}
 <form method="dialog"><button>Cerrar</button></form>
 <h2 id="tituloDetalleTipo"></h2>
 <div class="scroll"><table>
-<thead><tr><th scope="col">Módulo</th><th scope="col">Piso</th><th scope="col" class="amount" id="unidadDetalleTipo">Habitaciones</th></tr></thead>
+<thead><tr><th scope="col">Módulo</th><th scope="col">Piso</th><th scope="col" class="amount">Camas</th><th scope="col" class="amount" id="habitacionesDetalleTipo" hidden>Habitaciones</th></tr></thead>
 <tbody id="filasDetalleTipo"></tbody>
 </table></div>
 </dialog>
@@ -273,49 +273,50 @@ function showFreeCompanies(scope,companies){
  get('empresasLibres').showModal();
 }
 
-const roomStates=[
- ['completa','Totalmente ocupadas'],['parcial','Parcialmente ocupadas'],['libre','Libres']
+const bedTypeStates=[
+ ['ocupadas','completa','Camas ocupadas'],
+ ['libresEmpresa','parcial','Camas asignadas sin personal'],
+ ['libresSinEmpresa','libre','Camas libres sin empresa']
 ];
 let selectedChartType='';
 
 function summarizeTypes(beds,filters){
- const types=new Map(),rooms=new Map();
+ const types=new Map();
  for(const bed of beds){
   if(bed.state==='bloqueadas'||(filters.modulo&&bed.module!==filters.modulo)||
-     (filters.tipo&&bed.type!==filters.tipo))continue;
-  const key=bedKey(bed.module,bed.floor,bed.room);
-  if(!rooms.has(key))rooms.set(key,{...bed,total:0,occupied:0,matches:false});
-  const room=rooms.get(key);
-  room.total++;
-  if(bed.state==='ocupadas')room.occupied++;
-  if(filters.empresa&&bed.company!==filters.empresa)continue;
-  room.matches=true;
-  if(!types.has(bed.type))types.set(bed.type,{name:bed.type,rooms:[],companies:new Map()});
-  const companies=types.get(bed.type).companies;
+     (filters.tipo&&bed.type!==filters.tipo)||(filters.empresa&&bed.company!==filters.empresa))continue;
+  if(!types.has(bed.type))types.set(bed.type,{
+   name:bed.type,ocupadas:[],libresEmpresa:[],libresSinEmpresa:[],companies:new Map()
+  });
+  const type=types.get(bed.type);
+  type[bed.state].push(bed);
   const name=bed.company||'Sin empresa';
-  if(!companies.has(name))companies.set(name,{name,completa:[],libre:[]});
-  companies.get(name)[bed.state==='ocupadas'?'completa':'libre'].push(bed);
- }
- for(const room of rooms.values()){
-  if(!room.matches)continue;
-  room.status=room.occupied===0?'libre':room.occupied===room.total?'completa':'parcial';
-  types.get(room.type).rooms.push(room);
+  if(!type.companies.has(name))type.companies.set(name,{name,completa:[],libre:[]});
+  type.companies.get(name)[bed.state==='ocupadas'?'completa':'libre'].push(bed);
  }
  return [...types.values()].sort((a,b)=>a.name.localeCompare(b.name,'es'));
 }
 
-function showFloorBreakdown(title,items,unit){
+function showFloorBreakdown(title,beds,sortByRooms=false){
  const floors=new Map();
- for(const item of items){
-  const key=bedKey(item.module,item.floor);
-  if(!floors.has(key))floors.set(key,{module:item.module,floor:item.floor,count:0});
-  floors.get(key).count++;
+ for(const bed of beds){
+  const key=bedKey(bed.module,bed.floor);
+  if(!floors.has(key))floors.set(key,{module:bed.module,floor:bed.floor,count:0,rooms:new Set()});
+  const floor=floors.get(key);
+  floor.count++;
+  floor.rooms.add(bed.room);
  }
- const rows=[...floors.values()].sort((a,b)=>a.module.localeCompare(b.module,'es',{numeric:true})||a.floor-b.floor);
+ const rows=[...floors.values()].sort((a,b)=>
+  (sortByRooms?b.rooms.size-a.rooms.size:0)||a.module.localeCompare(b.module,'es',{numeric:true})||a.floor-b.floor);
+ const values=rows.map(row=>[row.module,String(row.floor),row.count]);
+ const total=['Total','',beds.length];
+ if(sortByRooms){
+  rows.forEach((row,index)=>values[index].push(row.rooms.size));
+  total.push(rows.reduce((sum,row)=>sum+row.rooms.size,0));
+ }
  get('tituloDetalleTipo').textContent=title;
- get('unidadDetalleTipo').textContent=unit;
- renderTable('filasDetalleTipo',[...rows.map(r=>[r.module,String(r.floor),r.count]),['Total','',items.length]],
-  3,'No hay registros.',2);
+ get('habitacionesDetalleTipo').hidden=!sortByRooms;
+ renderTable('filasDetalleTipo',[...values,total],total.length,'No hay registros.',2);
  get('detalleTipo').showModal();
 }
 
@@ -337,14 +338,15 @@ function breakdownRow(label,segments,total=segments.reduce((sum,[,,count])=>sum+
 function renderTypeCharts(types){
  const selected=types.find(type=>type.name===selectedChartType)||types[0];
  selectedChartType=selected?.name||'';
- get('habitacionesTipo').replaceChildren(...types.map(type=>{
+ get('camasTipo').replaceChildren(...types.map(type=>{
   const button=node('button',type.name,'tipo-grafico');
   button.type='button';
   button.setAttribute('aria-pressed',String(type===selected));
-  button.onclick=()=>{selectedChartType=type.name;renderTypeCharts(types);get('habitacionesTipo').querySelector('[aria-pressed="true"]').focus();};
-  return breakdownRow(button,roomStates.map(([state,label])=>{
-   const rooms=type.rooms.filter(room=>room.status===state);
-   return [state,label,rooms.length,()=>showFloorBreakdown(type.name+' · '+label,rooms,'Habitaciones')];
+  button.onclick=()=>{selectedChartType=type.name;renderTypeCharts(types);get('camasTipo').querySelector('[aria-pressed="true"]').focus();};
+  return breakdownRow(button,bedTypeStates.map(([state,color,label])=>{
+   const beds=type[state];
+   const onClick=state==='libresSinEmpresa'?null:()=>showFloorBreakdown(type.name+' · '+label,beds,true);
+   return [color,label,beds.length,onClick];
   }));
  }));
  get('tituloCamasEmpresa').textContent=selected?'Camas por empresa · '+selected.name:'Camas por empresa';
@@ -353,9 +355,9 @@ function renderTypeCharts(types){
  get('camasEmpresaTipo').replaceChildren(...companies.map(company=>breakdownRow(node('span',company.name),
   [['completa','Ocupadas'],['libre','Libres']].map(([state,label])=>{
    const beds=company[state];
-   return [state,label,beds.length,()=>showFloorBreakdown(selected.name+' · '+company.name+' · Camas '+label.toLowerCase(),beds,'Camas')];
+   return [state,label,beds.length,()=>showFloorBreakdown(selected.name+' · '+company.name+' · Camas '+label.toLowerCase(),beds)];
   }))));
- if(!types.length)get('habitacionesTipo').textContent='No hay habitaciones habilitadas para estos filtros.';
+ if(!types.length)get('camasTipo').textContent='No hay camas habilitadas para estos filtros.';
  if(!companies.length)get('camasEmpresaTipo').textContent='No hay camas habilitadas para estos filtros.';
 }
 
