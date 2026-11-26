@@ -280,7 +280,7 @@ function summarizeTypes(beds,filters){
  return [...types.values()].sort((a,b)=>a.name.localeCompare(b.name,'es'));
 }
 
-function showFloorBreakdown(title,beds,sortByBeds=false){
+function showFloorBreakdown(title,beds){
  const floors=new Map();
  for(const bed of beds){
   const key=bedKey(bed.module,bed.floor);
@@ -289,7 +289,7 @@ function showFloorBreakdown(title,beds,sortByBeds=false){
   floor.count++;
  }
  const rows=[...floors.values()].sort((a,b)=>
-  (sortByBeds?b.count-a.count:0)||a.module.localeCompare(b.module,'es',{numeric:true})||a.floor-b.floor);
+  b.count-a.count||a.module.localeCompare(b.module,'es',{numeric:true})||a.floor-b.floor);
  get('tituloDetalleTipo').textContent=title;
  renderTable('filasDetalleTipo',[...rows.map(row=>[row.module,String(row.floor),row.count]),['Total','',beds.length]],
   3,'No hay registros.',2);
@@ -321,7 +321,7 @@ function renderTypeCharts(types){
   button.onclick=()=>{selectedChartType=type.name;renderTypeCharts(types);get('camasTipo').querySelector('[aria-pressed="true"]').focus();};
   return breakdownRow(button,bedTypeStates.map(([state,color,label])=>{
    const beds=type[state];
-   const onClick=state==='libresSinEmpresa'?null:()=>showFloorBreakdown(type.name+' · '+label,beds,true);
+   const onClick=()=>showFloorBreakdown(type.name+' · '+label,beds);
    return [color,label,beds.length,onClick];
   }));
  }));
